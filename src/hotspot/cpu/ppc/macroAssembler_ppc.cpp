@@ -1318,7 +1318,6 @@ void MacroAssembler::call_VM_leaf_base(address entry_point) {
   BLOCK_COMMENT("} call_VM_leaf");
 }
 
-
 void MacroAssembler::call_VM(Register oop_result, address entry_point, bool check_exceptions) {
   call_VM_base(oop_result, noreg, entry_point, check_exceptions);
 }

@@ -54,7 +54,6 @@ class MacroAssembler: public Assembler {
   inline static int largeoffset_si16_si16_hi(int si31) { return (si31 + (1<<15)) >> 16; }
   inline static int largeoffset_si16_si16_lo(int si31) { return si31 - (((si31 + (1<<15)) >> 16) << 16); }
 
-
   // load d = *[a+si31]
   // Emits several instructions if the offset is not encodable in one instruction.
   void ld_largeoffset_unchecked(Register d, int si31, Register a, int emit_filler_nop);
@@ -360,9 +359,7 @@ class MacroAssembler: public Assembler {
   address call_c(Register function_entry);
   // For tail calls: only branch, don't link, so callee returns to caller of this function.
   address call_c_and_return_to_caller(Register function_entry);
-  address call_c(address function_entry,relocInfo::relocType rt = relocInfo::none);
-  
-
+  address call_c(address function_entry, relocInfo::relocType rt = relocInfo::none);
 #else
   // Call a C function via a function descriptor and use full C
   // calling conventions. Updates and returns _last_calls_return_pc.

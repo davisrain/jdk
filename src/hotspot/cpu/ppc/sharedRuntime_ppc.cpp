@@ -2444,9 +2444,7 @@ nmethod *SharedRuntime::generate_native_wrapper(MacroAssembler *masm,
 
   // The JNI call
   // --------------------------------------------------------------------------
-
   __ call_c(native_func, relocInfo::runtime_call_type);
-
 
 
   // Now, we are back from the native code.
