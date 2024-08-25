@@ -137,9 +137,6 @@ void InterpreterMacroAssembler::check_and_handle_popframe(Register scratch_reg) 
     // generated interpreter code.
     call_c(CAST_FROM_FN_PTR(address, Interpreter::remove_activation_preserving_args_entry), relocInfo::none);
 
-
-
-
     // Jump to Interpreter::_remove_activation_preserving_args_entry.
     mtctr(R3_RET);
     bctr();

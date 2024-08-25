@@ -1365,7 +1365,7 @@ void MacroAssembler::call_VM_leaf(address entry_point, Register arg_1, Register 
   mr_if_needed(R4_ARG2, arg_2);
   call_VM_leaf(entry_point);
 }
- 
+
 void MacroAssembler::call_VM_leaf(address entry_point, Register arg_1, Register arg_2, Register arg_3) {
   assert_different_registers(arg_2, R3_ARG1);
   assert_different_registers(arg_3, R3_ARG1, R4_ARG2);
