@@ -517,6 +517,106 @@ class StubGenerator: public StubCodeGenerator {
   }
 
 #undef __
+
+#define __ masm->
+  // Continuation point for throwing of implicit exceptions that are
+  // not handled in the current activation. Fabricates an exception
+  // oop and initiates normal exception dispatching in this
+  // frame. Only callee-saved registers are preserved (through the
+  // normal register window / RegisterMap handling).  If the compiler
+  // needs all registers to be preserved between the fault point and
+  // the exception handler then it must assume responsibility for that
+  // in AbstractCompiler::continuation_for_implicit_null_exception or
+  // continuation_for_implicit_division_by_zero_exception. All other
+  // implicit exceptions (e.g., NullPointerException or
+  // AbstractMethodError on entry) are either at call sites or
+  // otherwise assume that stack unwinding will be initiated, so
+  // caller saved registers were assumed volatile in the compiler.
+  //
+  // Note that we generate only this stub into a RuntimeStub, because
+  // it needs to be properly traversed and ignored during GC, so we
+  // change the meaning of the "__" macro within this method.
+  //
+  // Note: the routine set_pc_not_at_call_for_caller in
+  // SharedRuntime.cpp requires that this code be generated into a
+  // RuntimeStub.
+  address generate_throw_exception(const char* name, address runtime_entry, bool restore_saved_exception_pc,
+                                   Register arg1 = noreg, Register arg2 = noreg) {
+    CodeBuffer code(name, 1024 DEBUG_ONLY(+ 512), 0);
+    MacroAssembler* masm = new MacroAssembler(&code);
+
+    OopMapSet* oop_maps  = new OopMapSet();
+    int frame_size_in_bytes = frame::native_abi_reg_args_size;
+    OopMap* map = new OopMap(frame_size_in_bytes / sizeof(jint), 0);
+
+    address start = __ pc();
+
+    __ save_LR(R11_scratch1);
+
+    // Push a frame.
+    __ push_frame_reg_args(0, R11_scratch1);
+
+    address frame_complete_pc = __ pc();
+
+    if (restore_saved_exception_pc) {
+      __ unimplemented("StubGenerator::throw_exception with restore_saved_exception_pc");
+    }
+
+    // Note that we always have a runtime stub frame on the top of
+    // stack by this point. Remember the offset of the instruction
+    // whose address will be moved to R11_scratch1.
+    address gc_map_pc = __ get_PC_trash_LR(R11_scratch1);
+
+    __ set_last_Java_frame(/*sp*/R1_SP, /*pc*/R11_scratch1);
+
+    __ mr(R3_ARG1, R16_thread);
+    if (arg1 != noreg) {
+      __ mr(R4_ARG2, arg1);
+    }
+    if (arg2 != noreg) {
+      __ mr(R5_ARG3, arg2);
+    }
+    __ call_c(runtime_entry);
+
+    // Set an oopmap for the call site.
+    oop_maps->add_gc_map((int)(gc_map_pc - start), map);
+
+    __ reset_last_Java_frame();
+
+#ifdef ASSERT
+    // Make sure that this code is only executed if there is a pending
+    // exception.
+    {
+      Label L;
+      __ ld(R0,
+                in_bytes(Thread::pending_exception_offset()),
+                R16_thread);
+      __ cmpdi(CCR0, R0, 0);
+      __ bne(CCR0, L);
+      __ stop("StubRoutines::throw_exception: no pending exception");
+      __ bind(L);
+    }
+#endif
+
+    // Pop frame.
+    __ pop_frame();
+
+    __ restore_LR(R11_scratch1);
+
+    __ load_const(R11_scratch1, StubRoutines::forward_exception_entry());
+    __ mtctr(R11_scratch1);
+    __ bctr();
+
+    // Create runtime stub with OopMap.
+    RuntimeStub* stub =
+      RuntimeStub::new_runtime_stub(name, &code,
+                                    /*frame_complete=*/ (int)(frame_complete_pc - start),
+                                    frame_size_in_bytes/wordSize,
+                                    oop_maps,
+                                    false);
+    return stub->entry_point();
+  }
+#undef __
 #define __ _masm->
 
 
