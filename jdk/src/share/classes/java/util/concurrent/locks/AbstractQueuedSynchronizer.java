@@ -404,30 +404,47 @@ public abstract class AbstractQueuedSynchronizer
          *               first indicate they need a signal,
          *               then retry the atomic acquire, and then,
          *               on failure, block.
+         *               当后继节点是被blocked或者即将被blocked的时候，当前节点的waitStatus会是SIGNAL。
+         *               因此当前节点在释放或者取消的时候必须unpark它的后继节点。
+         *               为了避免竞争，acquire方法必须首先表明他们需要一个signal，然后重试原子的acquire，然后失败或阻塞
+         *
          *   CANCELLED:  This node is cancelled due to timeout or interrupt.
          *               Nodes never leave this state. In particular,
          *               a thread with cancelled node never again blocks.
+         *               节点由于超时或者中断被取消。
+         *               节点永远不会离开这个状态。特别是，被取消节点里的线程不会再次被阻塞
+         *
          *   CONDITION:  This node is currently on a condition queue.
          *               It will not be used as a sync queue node
          *               until transferred, at which time the status
          *               will be set to 0. (Use of this value here has
          *               nothing to do with the other uses of the
          *               field, but simplifies mechanics.)
+         *               节点当前正处在条件队列中。
+         *               它将不会被当作一个同步队列节点来使用直到被转换，当被转换时节点的状态会被设置为0。
+         *
          *   PROPAGATE:  A releaseShared should be propagated to other
          *               nodes. This is set (for head node only) in
          *               doReleaseShared to ensure propagation
          *               continues, even if other operations have
          *               since intervened.
-         *   0:          None of the above
+         *               一个 共享的释放 需要被传播到其他节点。
+         *               这个值在doReleaseShared方法中被设置，仅针对于头节点，以确保传播的继续，即使其他操作已经介入
+         *
+         *   0:          None of the above 以上状态都不是，表示为0
          *
          * The values are arranged numerically to simplify use.
          * Non-negative values mean that a node doesn't need to
          * signal. So, most code doesn't need to check for particular
          * values, just for sign.
+         * 这个值被安排为数字以方便的使用。
+         * 非负的值表示一个节点不需要被通知，因此，大部分代码不需要去检查特殊的值
          *
          * The field is initialized to 0 for normal sync nodes, and
          * CONDITION for condition nodes.  It is modified using CAS
          * (or when possible, unconditional volatile writes).
+         * 这个字段在通常的同步节点中被初始化为0，以及在条件节点中为CONDITION
+         * 它通过cas操作来进行修改，或者可能的情况下，无条件的volatile写
          */
         volatile int waitStatus;
 
@@ -457,12 +474,16 @@ public abstract class AbstractQueuedSynchronizer
          * point to the node itself instead of null, to make life
          * easier for isOnSyncQueue.
          */
+        // 一个入队操作直到attachment之后才会赋值前驱节点的next字段，因此如果发现next字段为null并不代表节点是队列的结束。
+        // 然而，如果一个next字段出现为了null，我们可以通过从tail节点往前遍历来双重检查一下。
+        // 被取消的节点的next字段会被设置为指向自身而不是null，去让isOnSyncQueue方法的判断更加轻松
         volatile Node next;
 
         /**
          * The thread that enqueued this node.  Initialized on
          * construction and nulled out after use.
          */
+        // 入队这个节点的线程，在构造的节点的时候就初始化了，并且在节点使用后置为null
         volatile Thread thread;
 
         /**
@@ -475,6 +496,10 @@ public abstract class AbstractQueuedSynchronizer
          * we save a field by using special value to indicate shared
          * mode.
          */
+        // 连接条件队列中下一个等待的节点 或者 是特殊的值SHARED。
+        // 因为条件队列只能在独占模式下，我们仅仅需要一个简单的链表队列去持有等待条件的节点。
+        // 它们后续会被转移到等待队列中通过reacquire操作。
+        // 并且因为条件只能是独占的，所以我们可以用这个字段存一个特别的值(SHARED)来表示共享模式
         Node nextWaiter;
 
         /**
@@ -519,17 +544,22 @@ public abstract class AbstractQueuedSynchronizer
      * If head exists, its waitStatus is guaranteed not to be
      * CANCELLED.
      */
+    // 等待队列的头节点，懒初始化的。除了初始化的时候，这个字段只会通过setHead方法来修改。
+    // 注意：如果头节点存在，那么它的waitStatus一定不是CANCELLED
     private transient volatile Node head;
 
     /**
      * Tail of the wait queue, lazily initialized.  Modified only via
      * method enq to add new wait node.
      */
+    // 等待队列的尾节点，懒初始化的。
+    // 只会通过入队操作添加新的等待节点来修改
     private transient volatile Node tail;
 
     /**
      * The synchronization state.
      */
+    // 同步状态
     private volatile int state;
 
     /**
