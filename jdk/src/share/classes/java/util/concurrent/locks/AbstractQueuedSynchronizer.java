@@ -611,17 +611,28 @@ public abstract class AbstractQueuedSynchronizer
      * @return node's predecessor
      */
     private Node enq(final Node node) {
+        // 当cas失败的时候一直进行自旋操作
         for (;;) {
+            // 将t引用指向tail
             Node t = tail;
+            // 如果tail为null的话，尝试通过cas初始化head
             if (t == null) { // Must initialize
                 if (compareAndSetHead(new Node()))
+                    // 如果初始化成功，将tail也指向head；
                     tail = head;
+
+                // 不管成功失败，都进行自旋，再次执行会走到外层else分支，
+                // 进行真实的持有当前线程的node的入队操作
             } else {
+                // 如果t不为null，将node的prev指向t
                 node.prev = t;
+                // 然后尝试通过cas将tail指向当前node
                 if (compareAndSetTail(t, node)) {
+                    // 如果成功的话，将t的next指向node，返回t
                     t.next = node;
                     return t;
                 }
+                // 如果失败，说明有其他线程在做同样的操作，tail引用已经被改变了，那么需要自旋重试
             }
         }
     }
@@ -633,8 +644,12 @@ public abstract class AbstractQueuedSynchronizer
      * @return the new node
      */
     private Node addWaiter(Node mode) {
+        // 创建一个Node节点，将当前线程和mode传入
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
+        // 尝试进行快速版本的入队
+        // 即当tail不为null的时候，将node的prev指向tail，然后尝试通过cas将tail指针指向当前node，
+        // 如果成功了，将上一个tail的next指向当前node，然后返回node
         Node pred = tail;
         if (pred != null) {
             node.prev = pred;
@@ -643,6 +658,8 @@ public abstract class AbstractQueuedSynchronizer
                 return node;
             }
         }
+        // 如果失败了，说明有其他线程在同时进行入队操作，那么执行完整的入队方法。
+        // 即cas加自旋
         enq(node);
         return node;
     }
@@ -656,6 +673,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     private void setHead(Node node) {
         head = node;
+        // 将thread和prev都置为null
         node.thread = null;
         node.prev = null;
     }
@@ -829,30 +847,46 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if thread should block
      */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        // 获取前驱节点的waitStatus
         int ws = pred.waitStatus;
+        // 如果前驱节点ws等于SIGNAL，
+        // 代表当前驱节点释放的时候，会通知它的后继节点，将它unpark，
+        // 那么当前节点就可以放心的park
         if (ws == Node.SIGNAL)
             /*
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
+
             return true;
+        // 如果前驱节点的ws大于0，说明是被取消的节点。
+        // 那么会向前查找第一个没有被取消的节点，作为新的前驱节点，并将中间CANCELED的节点都删除
         if (ws > 0) {
             /*
              * Predecessor was cancelled. Skip over predecessors and
              * indicate retry.
              */
+            // 那么跳过前驱节点，将node的prev指向前驱节点的prev，
+            // 循环进行判断，直到新的前驱节点的ws不是CANCELED为止
             do {
                 node.prev = pred = pred.prev;
             } while (pred.waitStatus > 0);
+            // 然后将新的前驱节点的next指向node
             pred.next = node;
-        } else {
+        }
+        // 如果前驱节点的ws是0或者PROPAGATE，表示我们需要一个信号，但是当前还不能将线程park，
+        // 因为前驱节点还不是SIGNAL，在释放的时候并不会给后继节点发信号将其unpark，可能会导致node里面的线程一直park下去。
+        // 所以我们需要先将前驱节点ws置为SIGNAL，然后再尝试一遍acquire操作，确保再park之前确实没办法获取到同步量
+        else {
             /*
              * waitStatus must be 0 or PROPAGATE.  Indicate that we
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
              */
+            // 采用cas将前驱节点的ws替换为SIGNAL，以保证node的线程park后能被unpark
             compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
         }
+        // 前驱节点的ws不为SIGNAL的时候，都返回false，尝试重新acquire
         return false;
     }
 
@@ -869,7 +903,9 @@ public abstract class AbstractQueuedSynchronizer
      * @return {@code true} if interrupted
      */
     private final boolean parkAndCheckInterrupt() {
+        // park当前线程
         LockSupport.park(this);
+        // 当线程被unpark的时候，返回线程的interrupt状态
         return Thread.interrupted();
     }
 
@@ -886,6 +922,9 @@ public abstract class AbstractQueuedSynchronizer
      * Acquires in exclusive uninterruptible mode for thread already in
      * queue. Used by condition wait methods as well as acquire.
      *
+     * 在排他且不可中断的模式下针对已经在队列中的线程进行获取。
+     * 被acquire方法以及condition wait方法使用
+     *
      * @param node the node
      * @param arg the acquire argument
      * @return {@code true} if interrupted while waiting
@@ -894,20 +933,34 @@ public abstract class AbstractQueuedSynchronizer
         boolean failed = true;
         try {
             boolean interrupted = false;
+            // 自旋
             for (;;) {
+                // 获取当前已经在等待队列中的node的前驱节点
                 final Node p = node.predecessor();
+                // 如果前驱节点等于head的话，尝试调用tryAcquire获取同步量
+                // 如果获取成功，调用setHead方法，该方法会把node设置为head，并且将node的thread和prev都置为null
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
                     p.next = null; // help GC
+                    // 将failed标志置为false，表示获取成功
                     failed = false;
+                    // 返回当前线程是否接收到了中断信号
                     return interrupted;
                 }
+                // 如果前驱节点不是head，或者tryAcquire失败了。
+                // 调用shouldParkAfterFailedAcquire方法判断是否应该将线程park掉，
+                // 如果是的话，对线程进行park和interrupt信号的检查；
+                // 如果不应该park，继续进行循环尝试获取同步量
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
+                    // 当线程被unpark唤醒之后，interrupt状态是true的话，将interrupted标志置为true，
+                    // 表示线程接收过中断信号
                     interrupted = true;
             }
         } finally {
+            // 如果failed标志为true，当前方法不会走到这个分支，因为方法的唯一return出口会将failed置为false
             if (failed)
+                // 调用cancelAcquire，将node进行取消
                 cancelAcquire(node);
         }
     }
@@ -1296,12 +1349,20 @@ public abstract class AbstractQueuedSynchronizer
      * @return the value returned from {@link #tryRelease}
      */
     public final boolean release(int arg) {
+        // 调用tryRelease尝试释放同步量
         if (tryRelease(arg)) {
+            // 如果成功了，获取head节点
             Node h = head;
+            // 如果head节点不为null 并且 waitStatus不等于0的话，
+            // 对后继节点持有的线程进行unpark操作唤醒它们来抢夺同步量。
+
+            // 换言之，也就是如果head的ws等于0的话，是不会对后继节点进行unpark的
             if (h != null && h.waitStatus != 0)
                 unparkSuccessor(h);
+            // 返回true，表示释放成功
             return true;
         }
+        // 返回false表示释放失败
         return false;
     }
 

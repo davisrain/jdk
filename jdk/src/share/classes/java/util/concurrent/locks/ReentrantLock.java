@@ -153,15 +153,23 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         }
 
         protected final boolean tryRelease(int releases) {
+            // 计算出释放之后state的剩余值
             int c = getState() - releases;
+            // 判断当前线程是否是占有aqs的线程，如果不是，报错
             if (Thread.currentThread() != getExclusiveOwnerThread())
                 throw new IllegalMonitorStateException();
+            // 以下对exclusiveOwnerThread和state的操作都不用同步策略，因为这里只有占有aqs的线程能够进行以下操作
+
+            // 根据剩余量是否等于0判断是否完全释放
             boolean free = false;
             if (c == 0) {
+                // 如果完全释放，将占有aqs的线程置为null
                 free = true;
                 setExclusiveOwnerThread(null);
             }
+            // 并且将aqs的state设置为剩余值
             setState(c);
+            // 返回是否完全释放的标志
             return free;
         }
 
