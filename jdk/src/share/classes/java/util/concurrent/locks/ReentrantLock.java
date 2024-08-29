@@ -127,14 +127,20 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * subclasses, but both need nonfair try for trylock method.
          */
         final boolean nonfairTryAcquire(int acquires) {
+            // 获取当前线程
             final Thread current = Thread.currentThread();
+            // 获取aqs的state值
             int c = getState();
+            // 如果aqs的state为0的话，说明当前aqs还不是被占有的状态
             if (c == 0) {
+                // 尝试使用cas进行占有，如果成功的话，将当前线程设置进aqs的exclusiveOwnerThread字段，表示被当前线程占有
                 if (compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
                     return true;
                 }
             }
+            // 如果aqs的state不为0，说明已经被占有，那么判断一下占有它的线程是不是就是当前线程。
+            // 如果是的话，说明是线程重入，是被允许的，直接添加state的值，这里不使用cas是因为只会有一个线程能进来，不会存在race condition
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
                 if (nextc < 0) // overflow
@@ -142,6 +148,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                 setState(nextc);
                 return true;
             }
+            // 如果占有失败 或者 当前线程不是已经占有aqs的线程，返回false，表示tryAcquire失败
             return false;
         }
 
@@ -203,13 +210,18 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * acquire on failure.
          */
         final void lock() {
+            // 尝试直接通过cas设置aqs的state值，如果成功了，说明获取到锁，
+            // 将当前线程设置进AbstractOwnableSynchronizer的exclusiveOwnerThread字段中，
+            // 说明aqs被当前线程占有
             if (compareAndSetState(0, 1))
                 setExclusiveOwnerThread(Thread.currentThread());
             else
+                // 如果失败的话，调用aqs通用的acquire方法
                 acquire(1);
         }
 
         protected final boolean tryAcquire(int acquires) {
+            // 调用父类Sync的nonfairTryAcquire方法
             return nonfairTryAcquire(acquires);
         }
     }
@@ -282,6 +294,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * at which time the lock hold count is set to one.
      */
     public void lock() {
+        // 调用自身持有的aqs子类同步器的lock方法
         sync.lock();
     }
 

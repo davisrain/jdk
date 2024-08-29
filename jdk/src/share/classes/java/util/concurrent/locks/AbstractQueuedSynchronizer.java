@@ -1225,6 +1225,8 @@ public abstract class AbstractQueuedSynchronizer
      *        can represent anything you like.
      */
     public final void acquire(int arg) {
+        // 调用留给子类实现的tryAcquire模版方法，如果成功的话，直接返回
+        // 如果失败了，创建一个Node节点添加进等待队列中，并且将调用该方法的线程block掉
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
             selfInterrupt();
