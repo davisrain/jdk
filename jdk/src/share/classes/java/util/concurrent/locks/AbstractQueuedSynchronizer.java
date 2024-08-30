@@ -671,7 +671,10 @@ public abstract class AbstractQueuedSynchronizer
          * to clear in anticipation of signalling.  It is OK if this
          * fails or if status is changed by waiting thread.
          */
+        // 获取node的ws
         int ws = node.waitStatus;
+        // 如果ws小于0，尝试通过cas把ws设置为0。
+        // 这里就算失败也没关系
         if (ws < 0)
             compareAndSetWaitStatus(node, ws, 0);
 
@@ -681,6 +684,8 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
+        // unpark被后继节点持有的线程，通常情况下就是next指向的节点。
+        // 但是如果next节点是CANCELED或者null的话，从tail节点开始往前查找到距离node最近的没有被取消的节点
         Node s = node.next;
         if (s == null || s.waitStatus > 0) {
             s = null;
@@ -688,6 +693,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (t.waitStatus <= 0)
                     s = t;
         }
+        // 如果后继节点不为null，unpark其持有的线程
         if (s != null)
             LockSupport.unpark(s.thread);
     }
