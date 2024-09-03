@@ -721,6 +721,9 @@ public abstract class AbstractQueuedSynchronizer
      * Release action for shared mode -- signals successor and ensures
      * propagation. (Note: For exclusive mode, release just amounts
      * to calling unparkSuccessor of head if it needs signal.)
+     *
+     * 共享模式下的release。通知后继节点并且确保能够传播。
+     * 对于独占模式来说，如果需要通知的话，release仅仅只调用head节点的unparkSuccessor方法
      */
     private void doReleaseShared() {
         /*
@@ -757,32 +760,38 @@ public abstract class AbstractQueuedSynchronizer
      * in shared mode, if so propagating if either propagate > 0 or
      * PROPAGATE status was set.
      *
+     * 设置同步队列的head节点，并且检查后继节点是否是以共享模式等待的，
+     * 如果是的话并且propagate大于0或者waitStatus是PROPAGATE，继续往后传播，唤醒后继节点来获取共享的同步量
+     *
      * @param node the node
      * @param propagate the return value from a tryAcquireShared
      */
     private void setHeadAndPropagate(Node node, int propagate) {
+        // 记录老的head用于下面的检查
         Node h = head; // Record old head for check below
+        // 将node设置为head，并且将node的thread和prev属性置为null
         setHead(node);
         /*
-         * Try to signal next queued node if:
-         *   Propagation was indicated by caller,
-         *     or was recorded (as h.waitStatus either before
-         *     or after setHead) by a previous operation
-         *     (note: this uses sign-check of waitStatus because
+         * Try to signal next queued node if:           如果满足以下条件的话就尝试去通知下一个队列中的节点：
+         *   Propagation was indicated by caller,           调用方表示需要去传播，即propagate参数大于0，
+         *     or was recorded (as h.waitStatus either before   或者老的head 或 新的head的ws被以前的操作记录了是需要被传播的，
+         *     or after setHead) by a previous operation        即ws小于0。
+         *     (note: this uses sign-check of waitStatus because（注意：这里使用ws小于0作条件是因为PROPAGATE可能被转换成SIGNAL）
          *      PROPAGATE status may transition to SIGNAL.)
          * and
-         *   The next node is waiting in shared mode,
+         *   The next node is waiting in shared mode,       并且 同步队列中下一个节点是以共享模式等待的 或者 是null
          *     or we don't know, because it appears null
          *
-         * The conservatism in both of these checks may cause
-         * unnecessary wake-ups, but only when there are multiple
-         * racing acquires/releases, so most need signals now or soon
+         * The conservatism in both of these checks may cause           这些保守主义的检查可能会造成不必要的唤醒，
+         * unnecessary wake-ups, but only when there are multiple           但是仅仅当这里存在多组acquire和release的竞争的时候才会出现，
+         * racing acquires/releases, so most need signals now or soon           因此大多数情况下这里是需要进行信号通知的
          * anyway.
          */
         if (propagate > 0 || h == null || h.waitStatus < 0 ||
             (h = head) == null || h.waitStatus < 0) {
             Node s = node.next;
             if (s == null || s.isShared())
+                // 调用doReleaseShared方法唤醒park在同步队列中的后继线程来获取共享同步量
                 doReleaseShared();
         }
     }
@@ -1047,30 +1056,42 @@ public abstract class AbstractQueuedSynchronizer
      */
     private boolean doAcquireNanos(int arg, long nanosTimeout)
             throws InterruptedException {
+        // 如果timeout小于等于0的话，直接返回false
         if (nanosTimeout <= 0L)
             return false;
+        // 将当前事件加上nanosTimeout计算出deadline
         final long deadline = System.nanoTime() + nanosTimeout;
+        // 生成一个node添加进同步队列中
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
+                // 获取node的前驱节点
                 final Node p = node.predecessor();
+                // 如果前驱节点是head 并且 tryAcquire成功，将node设置为head，返回true
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return true;
                 }
+                // 否则根据deadline减去当前时间重新计算出nanosTimeout
                 nanosTimeout = deadline - System.nanoTime();
+                // 如果小于等于0的话，返回false
                 if (nanosTimeout <= 0L)
                     return false;
+                // 根据前驱节点判断node持有的线程是否应该park
+                // 如果应该，那么判断nanosTimeout是否大于了自旋的阈值，
+                // 如果也大于，将当前线程park对应nanosTimeout的时间
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     nanosTimeout > spinForTimeoutThreshold)
                     LockSupport.parkNanos(this, nanosTimeout);
+                // 当线程被唤醒时判断interrupt状态，如果是true，抛出中断异常
                 if (Thread.interrupted())
                     throw new InterruptedException();
             }
         } finally {
+            // 如果获取失败了，需要将同步队列中的node进行取消
             if (failed)
                 cancelAcquire(node);
         }
@@ -1081,23 +1102,33 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      */
     private void doAcquireShared(int arg) {
+        // 创建一个SHARED模式的node添加进同步队列
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
         try {
             boolean interrupted = false;
             for (;;) {
+                // 获取node的前驱节点
                 final Node p = node.predecessor();
+                // 如果前驱节点等于head，并且tryAcquireShared方法返回值大于等于0的话
                 if (p == head) {
                     int r = tryAcquireShared(arg);
                     if (r >= 0) {
+                        // 说明获取成功，将node设置为head节点，
+                        // 并且将ws设置为PROPAGATE
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
+                        // 如果interrupted标志为true，将当前线程的interrupt状态也置为true
                         if (interrupted)
                             selfInterrupt();
+                        // 将failed标志置为false，然后返回
                         failed = false;
                         return;
                     }
                 }
+                // 如果获取失败，根据前驱节点判断当前线程是否应该park，
+                // 如果应该，将当前线程park，并且在线程被唤醒的时候检查interrupt状态。
+                // 如果状态为true，将interrupt标志置为true。
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
@@ -1263,6 +1294,11 @@ public abstract class AbstractQueuedSynchronizer
      *         return values enables this method to be used in contexts
      *         where acquires only sometimes act exclusively.)  Upon
      *         success, this object has been acquired.
+     *         1.负数的返回值表示失败；
+     *         2.0表示共享模式下的获取成功，并且后续不会再有共享模式的成功获取了；
+     *         3.正数表示共享模式下的获取成功，并且后续的共享模式获取也可能成功，在这种情况下，后续的等待的线程需要检查同步量的可获取性。
+     *
+     *
      * @throws IllegalMonitorStateException if acquiring would place this
      *         synchronizer in an illegal state. This exception must be
      *         thrown in a consistent fashion for synchronization to work
@@ -1381,8 +1417,11 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final boolean tryAcquireNanos(int arg, long nanosTimeout)
             throws InterruptedException {
+        // 如果当前线程interrupt状态为true，抛出异常
         if (Thread.interrupted())
             throw new InterruptedException();
+        // 调用tryAcquire尝试获取arg对应的同步量，如果成功，直接返回true；
+        // 否则继续调用doAcquireNanos方法进行获取
         return tryAcquire(arg) ||
             doAcquireNanos(arg, nanosTimeout);
     }
@@ -1427,6 +1466,9 @@ public abstract class AbstractQueuedSynchronizer
      *        and can represent anything you like.
      */
     public final void acquireShared(int arg) {
+        // 1.如果tryAcquireShared返回负数，代表获取失败，当前线程会进入同步队列中等待；
+        // 2.返回0，表示获取成功，但是后续的获取会失败
+        // 3.返回正数，表示获取成功，并且后续的获取也可能会成功
         if (tryAcquireShared(arg) < 0)
             doAcquireShared(arg);
     }
