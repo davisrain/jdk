@@ -168,17 +168,22 @@ public class CyclicBarrier {
      * on each generation.  It is reset to parties on each new
      * generation or when broken.
      */
+    // 仍然需要等待的parties的数量。当broken或者reset的时候将该属性设置为parties的值
     private int count;
 
     /**
      * Updates state on barrier trip and wakes up everyone.
      * Called only while holding lock.
      */
+    // 唤醒所有等待在trip条件上的节点，并且将count重新设置为parties的值，生成新的generation
     private void nextGeneration() {
+        // 唤醒条件队列中的线程
         // signal completion of last generation
         trip.signalAll();
         // set up next generation
         count = parties;
+        // 然后创建一个新的generation对象给barrier，这个操作不会影响被唤醒的线程，
+        // 因为它们在局部变量表中持有了原始的generation对象
         generation = new Generation();
     }
 
@@ -186,7 +191,13 @@ public class CyclicBarrier {
      * Sets current barrier generation as broken and wakes up everyone.
      * Called only while holding lock.
      */
+    // 将当前barrier的generation置为broken的，并且唤醒等待在条件队列中的所有节点
     private void breakBarrier() {
+        // 这个方法先将generation的broken置为true，再通知条件队列的线程，
+        // 因为条件队列中的线程唤醒后的操作依赖于generation的broken属性
+
+        // update: 执行顺序应该没有影响，因为执行该方法的时候线程一定是占有aqs的，被唤醒的线程需要等待
+        // 该线程释放占有才能执行，因此就算设置broken的语句写在signalAll后面也没关系
         generation.broken = true;
         count = parties;
         trip.signalAll();
@@ -201,61 +212,95 @@ public class CyclicBarrier {
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 获取当前的generation
             final Generation g = generation;
 
+            // 判断generation的broken标志，如果是true，抛出异常
             if (g.broken)
                 throw new BrokenBarrierException();
 
+            // 判断当前线程的interrupt标志，如果是true
             if (Thread.interrupted()) {
+                // 打断barrier，唤醒所有等待在trip条件上的node持有的线程
                 breakBarrier();
+                // 并且抛出中断异常
                 throw new InterruptedException();
             }
 
+            // 将count - 1
             int index = --count;
+            // 判断index是否等于0，即是否跳闸
             if (index == 0) {  // tripped
+                // 如果是的话，查看barrierCommand属性，看是否有在跳闸时的action要执行
                 boolean ranAction = false;
                 try {
                     final Runnable command = barrierCommand;
+                    // 如果action不为null的话，执行
                     if (command != null)
                         command.run();
                     ranAction = true;
+                    // 调用nextGeneration生成一个新的generation，并且将count重新设置为parties。
+                    // 这样barrier就能够循环使用
                     nextGeneration();
+                    // 返回0
                     return 0;
                 } finally {
+                    // 如果ranAction为false
                     if (!ranAction)
+                        // 打断barrier，唤醒所有条件等待的节点持有的线程
                         breakBarrier();
                 }
             }
 
             // loop until tripped, broken, interrupted, or timed out
+            // 如果减去1之后count不等于0，说明还没有跳闸，需要将当前线程挂起等待
             for (;;) {
                 try {
+                    // 如果timed参数为false，说明没有超时时间，直接调用trip的await方法，
+                    // 将线程封装为node添加进条件队列进行park等待
                     if (!timed)
                         trip.await();
+                    // 如果timed为true，并且nanos大于0的话
                     else if (nanos > 0L)
+                        // 添加进条件队列，park nanos对应的时间
                         nanos = trip.awaitNanos(nanos);
-                } catch (InterruptedException ie) {
+                }
+                // 如果等待被中断了，抛出了中断异常
+                catch (InterruptedException ie) {
+                    // 判断generation是否没有发生变化 并且 generation没有broken
                     if (g == generation && ! g.broken) {
+                        // 将barrier打破，唤醒条件队列的其他线程，抛出异常
                         breakBarrier();
                         throw ie;
                     } else {
                         // We're about to finish waiting even if we had not
                         // been interrupted, so this interrupt is deemed to
                         // "belong" to subsequent execution.
+                        // 如果此时generation已经发生变化 或者 已经broken了
+                        // 重新设置当前线程的interrupt标志
                         Thread.currentThread().interrupt();
                     }
                 }
 
+                // 如果当前线程所在的generation已经broken了，抛出异常
                 if (g.broken)
                     throw new BrokenBarrierException();
 
+                // 如果当前线程所在的generation已经不等于barrier的generation了，说明有线程调用了nextGeneration方法，成功跳闸。
+                // 返回index
                 if (g != generation)
                     return index;
 
+                // 如果线程被唤醒后当前generation即没有broken barrier也没有生成新的generation
+                // 那么判断等待时间是否超时了
                 if (timed && nanos <= 0L) {
+                    // 如果是的话，将barrier break，唤醒条件队列中的其他线程
                     breakBarrier();
+                    // 抛出超时异常
                     throw new TimeoutException();
                 }
+
+                // 如果没有超时，继续循环，再次等待在条件队列中
             }
         } finally {
             lock.unlock();
@@ -267,6 +312,9 @@ public class CyclicBarrier {
      * given number of parties (threads) are waiting upon it, and which
      * will execute the given barrier action when the barrier is tripped,
      * performed by the last thread entering the barrier.
+     *
+     * 创建一个新的CyclicBarrier，当达到给出数量的parties等待在这个barrier上面的时候会跳闸。
+     * 并且当barrier跳闸的时候最后一个到达的线程会执行action。
      *
      * @param parties the number of threads that must invoke {@link #await}
      *        before the barrier is tripped
@@ -466,7 +514,9 @@ public class CyclicBarrier {
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 将当前generation break掉，并且唤醒所有等待在条件队列中的线程
             breakBarrier();   // break the current generation
+            // 开始一个新的generation
             nextGeneration(); // start a new generation
         } finally {
             lock.unlock();

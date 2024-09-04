@@ -170,18 +170,29 @@ public class CountDownLatch {
         }
 
         protected int tryAcquireShared(int acquires) {
+            // 当state等于0的时候，返回1，表示获取成功；
+            // 否则返回-1，表示获取失败，会创建一个共享模式的节点添加进同步队列，并且阻塞当前线程
             return (getState() == 0) ? 1 : -1;
         }
 
         protected boolean tryReleaseShared(int releases) {
             // Decrement count; signal when transition to zero
             for (;;) {
+                // 获取aqs的state
                 int c = getState();
+                // 如果已经等于0了，返回false
                 if (c == 0)
                     return false;
+                // 将state-1作为要更新的值
                 int nextc = c-1;
-                if (compareAndSetState(c, nextc))
+                // 通过cas将state进行替换
+                if (compareAndSetState(c, nextc)) {
+                    // 如果cas成功，判断新的state是否等于0。
+                    // 如果等于0，说明释放成功；
+                    // 否则释放失败，这样保证了只有最后一次release操作才能够成功释放唤醒后继节点
                     return nextc == 0;
+                }
+                // 如果cas失败了，循环重试
             }
         }
     }
@@ -228,6 +239,9 @@ public class CountDownLatch {
      *         while waiting
      */
     public void await() throws InterruptedException {
+        // 调用acquireSharedInterruptibly方法获取1个数量的同步量。
+        // 会调用到sync的tryAcquireShared方法，该方法的逻辑是根据aqs的state来判断，如果state不为0的话，都会获取失败阻塞线程；
+        // 只有state被减为0的时候，才会获取成功
         sync.acquireSharedInterruptibly(1);
     }
 
@@ -288,6 +302,10 @@ public class CountDownLatch {
      * <p>If the current count equals zero then nothing happens.
      */
     public void countDown() {
+        // 调用sync的releaseShared方法，获取数量为1的同步量
+        // 会调用到tryReleaseShared方法，将aqs的state减去1，
+        // 如果state被减为0了，表示释放成功，才会调用doReleaseShared唤醒阻塞在同步队列中的后继节点
+        // 否则都是释放失败。
         sync.releaseShared(1);
     }
 

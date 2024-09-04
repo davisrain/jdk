@@ -176,20 +176,30 @@ public class Semaphore implements java.io.Serializable {
 
         final int nonfairTryAcquireShared(int acquires) {
             for (;;) {
+                // 获取当前aqs的state
                 int available = getState();
+                // 减去需要获取的同步量，计算出剩余同步量
                 int remaining = available - acquires;
+                // 如果剩余同步量已经小于0了，不进行cas更新，直接返回，共享模式下返回小于0的值代表获取失败；
+                // 或者 cas成功，返回剩余的同步量
                 if (remaining < 0 ||
                     compareAndSetState(available, remaining))
+                    // 返回剩余的同步量
                     return remaining;
             }
         }
 
         protected final boolean tryReleaseShared(int releases) {
             for (;;) {
+                // 获取aqs当前的state
                 int current = getState();
+                // 将当前的state加上要释放的同步量
                 int next = current + releases;
+                // 如果新的state小于了当前的state，说明溢出了，报错
                 if (next < current) // overflow
                     throw new Error("Maximum permit count exceeded");
+                // 然后使用cas更新state，如果成功了，返回true，表示释放成功；
+                // 如果失败循环重试
                 if (compareAndSetState(current, next))
                     return true;
             }
@@ -242,6 +252,8 @@ public class Semaphore implements java.io.Serializable {
 
         protected int tryAcquireShared(int acquires) {
             for (;;) {
+                // 公平模式下的tryAcquireShared会先判断同步队列中是否有已经入队的前驱节点，
+                // 如果有的话，直接返回-1，将该线程也放入同步队列等待，确保先入队的线程先获取到
                 if (hasQueuedPredecessors())
                     return -1;
                 int available = getState();
@@ -262,6 +274,7 @@ public class Semaphore implements java.io.Serializable {
      *        must occur before any acquires will be granted.
      */
     public Semaphore(int permits) {
+        // 默认创建非公平的sync
         sync = new NonfairSync(permits);
     }
 
@@ -277,6 +290,7 @@ public class Semaphore implements java.io.Serializable {
      *        else {@code false}
      */
     public Semaphore(int permits, boolean fair) {
+        // 根据传入的fair参数决定创建公平的Sync还是非公平的Sync
         sync = fair ? new FairSync(permits) : new NonfairSync(permits);
     }
 
@@ -309,6 +323,9 @@ public class Semaphore implements java.io.Serializable {
      * @throws InterruptedException if the current thread is interrupted
      */
     public void acquire() throws InterruptedException {
+        // 调用aqs的acquireSharedInterruptibly方法，获取数量为1的同步量。
+        // 会调用模版方法tryAcquireShared执行具体的获取逻辑，如果获取失败，
+        // 调用doAcquireSharedInterruptibly将线程在同步队列中阻塞
         sync.acquireSharedInterruptibly(1);
     }
 
@@ -360,6 +377,7 @@ public class Semaphore implements java.io.Serializable {
      *         otherwise
      */
     public boolean tryAcquire() {
+        // 直接点用sync的nonfairTryAcquireShared方法，不会阻塞caller线程
         return sync.nonfairTryAcquireShared(1) >= 0;
     }
 
@@ -423,6 +441,9 @@ public class Semaphore implements java.io.Serializable {
      * in the application.
      */
     public void release() {
+        // 调用sync的releaseShared方法释放数量为1的同步量
+        // 会调用到tryReleaseShared这个模版方法，执行子类实现的逻辑，
+        // 如果释放成功，会唤醒等待在同步队列中的线程
         sync.releaseShared(1);
     }
 

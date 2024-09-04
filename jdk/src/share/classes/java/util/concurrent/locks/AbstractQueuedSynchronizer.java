@@ -736,20 +736,34 @@ public abstract class AbstractQueuedSynchronizer
          * while we are doing this. Also, unlike other uses of
          * unparkSuccessor, we need to know if CAS to reset status
          * fails, if so rechecking.
+         *
+         * 确保一个release操作能够传播，即使这里有正在进行的acquires或者releases。
+         * 通常的处理方式是去尝试调用需要通知的head的unparkSuccessor方法。
+         * 但是如果它不需要通知，将其ws设置为PROPAGATE来确保在释放时传播能够继续。
+         * 另外，我们必须循环以防我们在做这些操作的时候有新的node添加了进来。
+         * 同样，不像其他地方使用unparkSuccessor方法，我们需要去知道cas是否成功了，如果失败了，需要进行重新检查
          */
         for (;;) {
+            // 获取同步队列的头节点
             Node h = head;
+            // 如果h不为null或者不等于tail
             if (h != null && h != tail) {
                 int ws = h.waitStatus;
+                // 判断头节点的ws是否等于SIGNAL
                 if (ws == Node.SIGNAL) {
+                    // 如果等于，将ws通过cas转换为0；
+                    // 如果cas失败了，说明可能存在并发的acquire或者release
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
+                    // 如果cas成功了，调用unparkSuccessor唤醒头节点的后继节点的线程
                     unparkSuccessor(h);
                 }
                 else if (ws == 0 &&
                          !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
                     continue;                // loop on failed CAS
             }
+            // 如果h仍然等于head，即没有其他线程改变head的话，跳出循环；
+            // 否则需要继续循环检查
             if (h == head)                   // loop if head changed
                 break;
         }
@@ -1528,7 +1542,9 @@ public abstract class AbstractQueuedSynchronizer
      * @return the value returned from {@link #tryReleaseShared}
      */
     public final boolean releaseShared(int arg) {
+        // 调用tryReleaseShared方法，如果成功了
         if (tryReleaseShared(arg)) {
+            // 调用doReleaseShared方法
             doReleaseShared();
             return true;
         }
@@ -1706,6 +1722,11 @@ public abstract class AbstractQueuedSynchronizer
         Node t = tail; // Read fields in reverse initialization order
         Node h = head;
         Node s;
+        // 当head不等于tail的时候，说明队列中存在等待的node节点。
+        // 然后判断head的next节点，如果等于null，说明是处于刚入队的情况，
+        // 只是将node的prev指向了pred，以及将tail通过cas指向了node，还没有将pred的next引用指向node，
+        // 所以h的next引用指向null，但这种情况也是属于已经入队了，如果会返回true；
+        // 或者next指向的节点不为null，但是节点持有的线程不是当前线程，因此也会返回true，表示有前置入队的节点。
         return h != t &&
             ((s = h.next) == null || s.thread != Thread.currentThread());
     }
