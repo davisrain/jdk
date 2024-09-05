@@ -746,26 +746,58 @@ public abstract class AbstractQueuedSynchronizer
         for (;;) {
             // 获取同步队列的头节点
             Node h = head;
-            // 如果h不为null或者不等于tail
+            // 如果h不为null或者不等于tail，说明同步队列中是存在等待的节点的，需要被唤醒
             if (h != null && h != tail) {
                 int ws = h.waitStatus;
                 // 判断头节点的ws是否等于SIGNAL
                 if (ws == Node.SIGNAL) {
                     // 如果等于，将ws通过cas转换为0；
                     // 如果cas失败了，说明可能存在并发的acquire或者release
+                    // cas失败的线程需要重试，以确保unpark不会丢失
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
                     // 如果cas成功了，调用unparkSuccessor唤醒头节点的后继节点的线程
                     unparkSuccessor(h);
                 }
+                // ws等于0是一个短暂的中间态，只会出现在：
+                // 1.head节点的ws被上一步的cas替换为0，但head节点还没有被唤醒的后继节点通过setHead方法替换的时候
+                // 2.刚有新的节点添加进同步队列，还没有通过shouldParkAfterFailedAcquire方法将前驱的head节点的ws更新为SIGNAL的时候
+
+                // 将head的ws从0替换为PROPAGATE。
+                // 1.对于第二种情况，PROPAGATE也是个中间态，很快会被shouldParkAfterFailedAcquire设置为SIGNAL。
+                // 2.对于第一种情况，将head的ws置为PROPAGATE，以确保在setHeadAndPropagate方法里面能够将release操作传播下去，
+                // 继续调用doReleaseShared方法唤醒下一个节点，这样unpark就不会丢失
+
+                // 如果cas失败了，重试，以确保unpark不丢失
+
+                // PROPAGATE状态也是为了确保unpark不丢失的，考虑下面场景：
+                // 两个线程同时进入doReleaseShared方法，即有两个unpark操作要做
+                // 1.此时head节点的ws为SIGNAL，两个线程同时cas将ws替换为0，线程1成功，线程2重试；
+                // 2.线程1调用到setHeadAndPropagate方法之前暂停了，线程2重试发现获取的head还是原本的head，发现ws为0，将其cas为PROPAGATE，由于head没有变化，线程2结束了release，此时丢失了一个unpark；
+                // 3.此时线程2恢复执行，在setHeadAndPropagate方法中发现head的ws为PROPAGATE，那么调用doReleaseShared方法，相当于对上一步丢失的unpark进行了补偿
+                //
+                // 第二种情况：
+                // 2.线程2还没有执行到cas替换ws为PROPAGATE的地方，线程1就执行完了setHeadAndPropagate方法，由于head的ws不是PROPAGATE，所以线程1不会调用doReleaseShared方法；
+                // 3.但是由于已经执行完了setHeadAndPropagate方法，此时head已经发现变化，所以线程1在h==head校验时会失败，会继续进行循环，拿到最新的head进行判断，此时线程2的unpark没有丢失
                 else if (ws == 0 &&
                          !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
                     continue;                // loop on failed CAS
             }
             // 如果h仍然等于head，即没有其他线程改变head的话，跳出循环；
-            // 否则需要继续循环检查
+            // 否则需要继续循环检查，以确保unpark不丢失。
             if (h == head)                   // loop if head changed
                 break;
+
+            // 就算有unpark丢失了，在setHeadAndPropagate方法里面也会进行兜底调用doReleaseShared方法。
+            // 比如下面这个场景：
+            // 有三个线程同时调用了doReleaseShared方法，即有三个unpark操作要做。
+            // 1.此时head节点的ws为SIGNAL，三个线程同时进行cas将head的ws从SIGNAL替换为0，那么只会有一个成功，记为线程1，其余两个线程会重试，
+            // 然后成功的那个线程由于cpu调度的原因一直没有调用setHeadAndPropagate方法，那么head节点就一直没有变化。
+            // 2.重试的两个线程由于此时head的ws为0，同时走到了将head的ws从0替换为PROPAGATE的地方，此时也只有一个线程会成功，记为线程2，
+            // 线程2会走到head节点的判断，由于此时head没有变化，所以线程2跳出循环，那么此时其实丢失了一个unpark。线程3继续重试
+            // 3.线程3发现head的ws既不等于SIGNAL也不等于0，会直接走到head的判断逻辑，然后跳出循环，丢失了另一个unpark。
+            // 但是，就算丢失了2个unpark，由于已经将head的ws修改为了PROPAGATE，那么在setHeadAndPropagate方法里面一定会继续调用doReleaseShared方法，
+            // 也就是unpark能一直被传播下去，不会出现由于unpark丢失而导致整个aqs阻塞的情况
         }
     }
 

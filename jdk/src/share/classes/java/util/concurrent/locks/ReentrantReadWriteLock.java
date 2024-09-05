@@ -259,23 +259,32 @@ public class ReentrantReadWriteLock
          * and the upper the shared (reader) hold count.
          */
 
+        // 共享锁的偏移量，16位，代表的是aqs中state的高16位表示共享锁以及数量
+        // 那么aqs的低16位就表示独占锁以及数量
         static final int SHARED_SHIFT   = 16;
+        // 共享锁的单位，1 << 16
         static final int SHARED_UNIT    = (1 << SHARED_SHIFT);
+        // 每种锁的最大数量 1 << 16 - 1 = 65535
         static final int MAX_COUNT      = (1 << SHARED_SHIFT) - 1;
+        // 独占锁的掩码 00000000000000001111111111111111
         static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
 
         /** Returns the number of shared holds represented in count  */
+        // 将c向右移16位就能得到共享锁的数量
         static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }
         /** Returns the number of exclusive holds represented in count  */
+        // 将c同exclusiveMask位与就能得到独占锁的数量
         static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }
 
         /**
          * A counter for per-thread read hold counts.
          * Maintained as a ThreadLocal; cached in cachedHoldCounter
          */
+        // 用于保存每个线程占用的读锁数量，维护在ThreadLocal中并缓存在cachedHoldCounter里
         static final class HoldCounter {
             int count = 0;
             // Use id, not reference, to avoid garbage retention
+            // 这里使用线程id而不是线程对象是为了避免影响垃圾回收
             final long tid = getThreadId(Thread.currentThread());
         }
 
@@ -295,6 +304,7 @@ public class ReentrantReadWriteLock
          * Initialized only in constructor and readObject.
          * Removed whenever a thread's read hold count drops to 0.
          */
+        // 当前线程持有的可重入读锁的数量
         private transient ThreadLocalHoldCounter readHolds;
 
         /**
@@ -311,6 +321,7 @@ public class ReentrantReadWriteLock
          * <p>Accessed via a benign data race; relies on the memory
          * model's final field and out-of-thin-air guarantees.
          */
+        // 最后一个成功获取读锁的线程的HoldCounter
         private transient HoldCounter cachedHoldCounter;
 
         /**
@@ -335,7 +346,9 @@ public class ReentrantReadWriteLock
         private transient int firstReaderHoldCount;
 
         Sync() {
+            // 初始化HoldCounter的ThreadLocal
             readHolds = new ThreadLocalHoldCounter();
+            // 通过对volatile变量的读写保证readHolds的可见性
             setState(getState()); // ensures visibility of readHolds
         }
 
@@ -389,22 +402,41 @@ public class ReentrantReadWriteLock
              *    queue policy allows it. If so, update state
              *    and set owner.
              */
+            // 1.如果读锁数量不为0 或者 写锁数量不为0且持有写锁的线程不是当前线程，失败
+            // 2.如果写锁数量已经满了，失败
+            // 3.其他情况，如果这个线程是个重入的获取 或者 队列策略是允许它的，那么该线程是符合条件的，更新aqs的state和owner线程
             Thread current = Thread.currentThread();
+            // 获取aqs当前的state
             int c = getState();
+            //  计算出独占锁的数量
             int w = exclusiveCount(c);
+            // 如果c不等于0的话，说明当前存在写锁或读锁
             if (c != 0) {
                 // (Note: if c != 0 and w == 0 then shared count != 0)
+                // 1.如果独占锁数量为0，并且aqs的state不为0，说明共享锁的数量不为0，这种情况下会阻塞获取独占锁
+                // 或者
+                // 2.如果独占锁的数量不为0，那么需要判断当前线程是否就是占有aqs的线程，如果不是，也需要阻塞
+                // 所以以上两种情况都会返回false，将当前线程在同步队列中park
                 if (w == 0 || current != getExclusiveOwnerThread())
                     return false;
+                // 如果当前存在的锁是写锁 并且 占有aqs的线程就是当前线程，可以进行重入
+                // 计算添加后写锁的数量是否 大于了 最大锁数量，如果大于，报错
                 if (w + exclusiveCount(acquires) > MAX_COUNT)
                     throw new Error("Maximum lock count exceeded");
                 // Reentrant acquire
+                // 如果不大于，设置state，完成写锁重入。
+                // 这个位置不用做任何同步操作，因为是写锁重入的场景，不会有读锁来更新state，能够更新state的写锁也就只有当前线程
                 setState(c + acquires);
+                // 返回true，表示获取成功
                 return true;
             }
+            // 如果state等于0的话，说明aqs没有被任何占有
+            // 调用writerShouldBlock方法判断是否应该阻塞，非公平的sync默认返回false；
+            // 尝试使用cas替换aqs的state值，如果更新失败，返回false，将当前线程添加进同步队列中park
             if (writerShouldBlock() ||
                 !compareAndSetState(c, c + acquires))
                 return false;
+            // 如果cas成功的话，将当前线程设置为占有aqs独占锁的线程，并且返回true
             setExclusiveOwnerThread(current);
             return true;
         }
