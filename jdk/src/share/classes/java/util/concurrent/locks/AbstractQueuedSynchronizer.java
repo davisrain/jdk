@@ -1698,6 +1698,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     final boolean apparentlyFirstQueuedIsExclusive() {
         Node h, s;
+        // 判断同步队列里面等待的第一个节点是否是exclusive的并且节点的thread不为null
         return (h = head) != null &&
             (s = h.next)  != null &&
             !s.isShared()         &&
