@@ -449,24 +449,35 @@ public class ReentrantReadWriteLock
 
         protected final boolean tryReleaseShared(int unused) {
             Thread current = Thread.currentThread();
+            // 如果firstReader等于当前线程
             if (firstReader == current) {
                 // assert firstReaderHoldCount > 0;
+                // 判断firstReaderHolderCount是否等于1，如果是的话，将firstReader置为null
                 if (firstReaderHoldCount == 1)
                     firstReader = null;
                 else
+                    // 否则，将holdCount--
                     firstReaderHoldCount--;
             } else {
+                // 如果firstReader不等于当前线程，获取缓存的最近一次的holdCounter
                 HoldCounter rh = cachedHoldCounter;
+                // 如果为null 或者 持有的线程id不等于当前线程的id，从ThreadLocal中获取当前线程的holdCounter
                 if (rh == null || rh.tid != getThreadId(current))
                     rh = readHolds.get();
+                // 获取当前线程持有的读锁数量
                 int count = rh.count;
+                // 如果数量小于等于1的话，
                 if (count <= 1) {
+                    // 将ThreadLocal删除
                     readHolds.remove();
+                    // 如果数量小于等于0了，报错
                     if (count <= 0)
                         throw unmatchedUnlockException();
                 }
+                // 将holdCounter持有的count--
                 --rh.count;
             }
+            // 自旋+cas更新aqs的state的高16位，即共享同步量
             for (;;) {
                 int c = getState();
                 int nextc = c - SHARED_UNIT;
@@ -474,6 +485,7 @@ public class ReentrantReadWriteLock
                     // Releasing the read lock has no effect on readers,
                     // but it may allow waiting writers to proceed if
                     // both read and write locks are now free.
+                    // 如果更新后的值等于0的话，返回true，表示共享锁成功释放，会唤醒同步队列中阻塞的后继节点
                     return nextc == 0;
             }
         }
