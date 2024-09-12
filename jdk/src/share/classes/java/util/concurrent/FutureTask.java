@@ -162,23 +162,30 @@ public class FutureTask<V> implements RunnableFuture<V> {
     }
 
     public boolean cancel(boolean mayInterruptIfRunning) {
+        // 尝试将状态从NEW cas 到INTERRUPTING 或者CANCELLED
+        // 如果状态就不是NEW 胡总和 cas失败了，返回false，表示取消失败
         if (!(state == NEW &&
               UNSAFE.compareAndSwapInt(this, stateOffset, NEW,
                   mayInterruptIfRunning ? INTERRUPTING : CANCELLED)))
             return false;
         try {    // in case call to interrupt throws exception
+            // 如果是要中断线程的
             if (mayInterruptIfRunning) {
                 try {
+                    // 对持有的runner调用interrupt方法
                     Thread t = runner;
                     if (t != null)
                         t.interrupt();
                 } finally { // final state
+                    // 然后将状态 cas 为INTERRUPTED
                     UNSAFE.putOrderedInt(this, stateOffset, INTERRUPTED);
                 }
             }
         } finally {
+            // 最后调用finishCompletion，唤醒所有park在该future上的线程
             finishCompletion();
         }
+        // 返回true表示取消成功
         return true;
     }
 
@@ -295,6 +302,7 @@ public class FutureTask<V> implements RunnableFuture<V> {
      * @return {@code true} if successfully run and reset
      */
     protected boolean runAndReset() {
+        // 如果futureTask状态不是NEW 或者 将runner从null cas 到当前线程失败了，直接返回false，表示执行失败
         if (state != NEW ||
             !UNSAFE.compareAndSwapObject(this, runnerOffset,
                                          null, Thread.currentThread()))
@@ -303,11 +311,15 @@ public class FutureTask<V> implements RunnableFuture<V> {
         int s = state;
         try {
             Callable<V> c = callable;
+            // 如果callable不为null 并且 futureTask状态为NEW
             if (c != null && s == NEW) {
                 try {
+                    // 调用call方法执行任务，如果没有异常，将ran设置为true，
+                    // 但是这里不会设置future的result
                     c.call(); // don't set result
                     ran = true;
                 } catch (Throwable ex) {
+                    // 如果出现异常，会设置future的result为异常对象，并且将state替换为EXCEPTIONAL
                     setException(ex);
                 }
             }
@@ -317,10 +329,13 @@ public class FutureTask<V> implements RunnableFuture<V> {
             runner = null;
             // state must be re-read after nulling runner to prevent
             // leaked interrupts
+            // 重新获取state
             s = state;
+            // 如果state大于了INTERRUPTING，说明任务被取消了
             if (s >= INTERRUPTING)
                 handlePossibleCancellationInterrupt(s);
         }
+        // 返回是否成功执行任务 以及 当前futureTask状态是否是NEW
         return ran && s == NEW;
     }
 
