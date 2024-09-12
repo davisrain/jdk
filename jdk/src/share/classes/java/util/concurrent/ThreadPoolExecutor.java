@@ -745,7 +745,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
 
             // 如果workerCount都等于0了，那么说明可以terminate了
             final ReentrantLock mainLock = this.mainLock;
-            // 通过mainLock加锁
+            // 通过mainLock加锁，这里加锁主要是为了唤醒等待在termination条件队列里面的线程。
+            // 因为ctl状态的并发修改已经由cas保证安全了
             mainLock.lock();
             try {
                 // 将ctl通过cas替换为TIDYING，并且workerCount为0
@@ -807,6 +808,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         mainLock.lock();
         try {
             for (Worker w : workers)
+                // 调用worker的interruptIfStarted，
+                // 当worker中的aqs的 state > 0的时候才中断
                 w.interruptIfStarted();
         } finally {
             mainLock.unlock();
@@ -1589,15 +1592,22 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      */
     public void shutdown() {
         final ReentrantLock mainLock = this.mainLock;
+        // 加锁
         mainLock.lock();
         try {
+            // 检查是否有修改worker持有的线程的permission
             checkShutdownAccess();
+            // 通过cas将线程池的runState替换为SHUTDOWN
             advanceRunState(SHUTDOWN);
+            // 中断所有空闲的worker，即没有加锁执行任务的worker
             interruptIdleWorkers();
+            // 模版方法，供子类实现，比如ScheduledThreadPoolExecutor
             onShutdown(); // hook for ScheduledThreadPoolExecutor
         } finally {
+            // 解锁
             mainLock.unlock();
         }
+        // 尝试将线程池terminate
         tryTerminate();
     }
 
@@ -1621,15 +1631,21 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     public List<Runnable> shutdownNow() {
         List<Runnable> tasks;
         final ReentrantLock mainLock = this.mainLock;
+        // 加锁
         mainLock.lock();
         try {
+            // 检查是否能够修改workers持有的线程
             checkShutdownAccess();
+            // 将线程池的runState通过cas替换为STOP
             advanceRunState(STOP);
+            // 中断所有的workers，而不是空闲的workers
             interruptWorkers();
+            // 然后将任务队列里面的任务都清除出来
             tasks = drainQueue();
         } finally {
             mainLock.unlock();
         }
+        // 尝试将线程池terminate
         tryTerminate();
         return tasks;
     }
@@ -1954,7 +1970,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * @return {@code true} if the task was removed
      */
     public boolean remove(Runnable task) {
+        // 将task从任务队列中删除
         boolean removed = workQueue.remove(task);
+        // 尝试将线程池terminate，以防线程池是SHUTDOWN并且任务队列为空
         tryTerminate(); // In case SHUTDOWN and now empty
         return removed;
     }
