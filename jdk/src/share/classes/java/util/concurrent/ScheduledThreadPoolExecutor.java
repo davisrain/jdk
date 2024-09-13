@@ -919,6 +919,7 @@ public class ScheduledThreadPoolExecutor
          * Sets f's heapIndex if it is a ScheduledFutureTask.
          */
         private void setIndex(RunnableScheduledFuture<?> f, int idx) {
+            // 只有当堆中元素是ScheduleFutureTask的时候，能够设置heapIndex
             if (f instanceof ScheduledFutureTask)
                 ((ScheduledFutureTask)f).heapIndex = idx;
         }
@@ -968,9 +969,13 @@ public class ScheduledThreadPoolExecutor
          */
         private void grow() {
             int oldCapacity = queue.length;
+            // 扩容1.5倍
             int newCapacity = oldCapacity + (oldCapacity >> 1); // grow 50%
+            // 如果溢出了
             if (newCapacity < 0) // overflow
+                // 转换为int最大值
                 newCapacity = Integer.MAX_VALUE;
+            // 复制旧数组的元素到新数组
             queue = Arrays.copyOf(queue, newCapacity);
         }
 
@@ -1056,27 +1061,40 @@ public class ScheduledThreadPoolExecutor
         }
 
         public boolean offer(Runnable x) {
+            // 如果添加的任务为null，抛出npe异常
             if (x == null)
                 throw new NullPointerException();
+            // 将runnable强转为RunnableScheduleFuture类型
             RunnableScheduledFuture<?> e = (RunnableScheduledFuture<?>)x;
+            // 加锁
             final ReentrantLock lock = this.lock;
             lock.lock();
             try {
+                // 如果size已经大于等于数组的长度了，进行扩容
                 int i = size;
                 if (i >= queue.length)
                     grow();
+                // 将size + 1
                 size = i + 1;
+                // 如果原始的size为0，即添加第一个元素
                 if (i == 0) {
+                    // 直接设置到堆中第一个元素即可
                     queue[0] = e;
+                    // 将元素在堆中的index设置回元素自身持有
                     setIndex(e, 0);
-                } else {
+                }
+                // 其他情况下，设置进堆的末尾，然后进行siftUp，调整元素在堆中的位置
+                else {
                     siftUp(i, e);
                 }
+                // 完成添加操作后，判断添加的任务是否位于堆顶
+                // 如果是的话，将leader置为null，并且唤醒等待在available条件队列上的线程
                 if (queue[0] == e) {
                     leader = null;
                     available.signal();
                 }
             } finally {
+                // 解锁
                 lock.unlock();
             }
             return true;
