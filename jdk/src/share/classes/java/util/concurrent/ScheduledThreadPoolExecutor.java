@@ -244,18 +244,27 @@ public class ScheduledThreadPoolExecutor
         public int compareTo(Delayed other) {
             if (other == this) // compare zero if same object
                 return 0;
+            // 如果other也是ScheduleFutureTask类型的
             if (other instanceof ScheduledFutureTask) {
-                ScheduledFutureTask<?> x = (ScheduledFutureTask<?>)other;
+                ScheduledFutureTask<?> x = (ScheduledFutureTask<?>) other;
+                // 计算time的差值
                 long diff = time - x.time;
+                // 如果diff小于0的话，说明自身要早于other执行，应该排在前面，返回-1
                 if (diff < 0)
                     return -1;
+                //  如果大于0，说明自身晚于other执行，排在后面，返回1
                 else if (diff > 0)
                     return 1;
+                // 如果diff = 0的话，说明执行时间是一样的，那么就两者的序列号，
+                // 即对象创建的先后顺序，如果自身比other先创建的话，返回-1
                 else if (sequenceNumber < x.sequenceNumber)
                     return -1;
+                // 否则返回1
                 else
                     return 1;
             }
+            // 如果other不是ScheduleFutureTask类型的，那么比较getDelay方法的返回值
+            // delay较小的先执行，排在前面
             long diff = getDelay(NANOSECONDS) - other.getDelay(NANOSECONDS);
             return (diff < 0) ? -1 : (diff > 0) ? 1 : 0;
         }
@@ -930,15 +939,22 @@ public class ScheduledThreadPoolExecutor
          */
         private void siftUp(int k, RunnableScheduledFuture<?> key) {
             while (k > 0) {
+                // 获取堆中父节点
                 int parent = (k - 1) >>> 1;
                 RunnableScheduledFuture<?> e = queue[parent];
+                // 如果key是需要排再父节点后面的，直接跳出循环，堆的顺序已经合法
                 if (key.compareTo(e) >= 0)
                     break;
+                // 否则，将父节点设置到k的位置
                 queue[k] = e;
+                // 然后将k设置进父节点中
                 setIndex(e, k);
+                // 然后将k指向父节点的位置，继续向上遍历
                 k = parent;
             }
+            // 最终将key设置到k的位置中
             queue[k] = key;
+            // 并且将k设置进key的index里
             setIndex(key, k);
         }
 
@@ -947,20 +963,31 @@ public class ScheduledThreadPoolExecutor
          * Call only when holding lock.
          */
         private void siftDown(int k, RunnableScheduledFuture<?> key) {
+            // 获取堆中元素一半位置的下标
             int half = size >>> 1;
+            // 如果k小于了half，说明是有子节点的
             while (k < half) {
+                // 获取它的左子节点
                 int child = (k << 1) + 1;
                 RunnableScheduledFuture<?> c = queue[child];
+                // 获取它的右子节点
                 int right = child + 1;
+                // 如果它的右子节点是存在的 并且 左子节点比右子节点大，那么使用右子节点来判断
                 if (right < size && c.compareTo(queue[right]) > 0)
                     c = queue[child = right];
+                // 如果key已经小于等于子节点了，那么没有必要继续将key下沉了，直接跳出循环
                 if (key.compareTo(c) <= 0)
                     break;
+                // 否则将c设置到k的位置
                 queue[k] = c;
+                // 并且将k设置进c的index
                 setIndex(c, k);
+                // 比子节点的坐标给k，继续循环下沉，为key元素找到合适的位置
                 k = child;
             }
+            // 循环结束，将key设置进找到的k的下标
             queue[k] = key;
+            // 并且将k下标设置进key的index
             setIndex(key, k);
         }
 
@@ -983,19 +1010,26 @@ public class ScheduledThreadPoolExecutor
          * Finds index of given object, or -1 if absent.
          */
         private int indexOf(Object x) {
+            // 如果x不为null的话
             if (x != null) {
+                // 判断x是否是ScheduleFutureTask，因为这种类型是保存了在heap中的index的
                 if (x instanceof ScheduledFutureTask) {
+                    // 获取到heapIndex
                     int i = ((ScheduledFutureTask) x).heapIndex;
                     // Sanity check; x could conceivably be a
                     // ScheduledFutureTask from some other pool.
+                    // 再次检查一遍堆中heapIndex的位置的元素是不是就等于x，因为x有可能来自于其他堆
                     if (i >= 0 && i < size && queue[i] == x)
+                        // 如果是的话，返回heapIndex
                         return i;
                 } else {
+                    // 其他情况进行线性遍历堆
                     for (int i = 0; i < size; i++)
                         if (x.equals(queue[i]))
                             return i;
                 }
             }
+            // 如果没有找到，返回-1
             return -1;
         }
 
@@ -1013,19 +1047,28 @@ public class ScheduledThreadPoolExecutor
             final ReentrantLock lock = this.lock;
             lock.lock();
             try {
+                // 查找x在堆中的位置，如果没有找到，返回false，代表删除失败
                 int i = indexOf(x);
                 if (i < 0)
                     return false;
 
+                // 如果找到了，将对应元素的index置为-1，表示已经不在堆中了
                 setIndex(queue[i], -1);
+                // 将size-1
                 int s = --size;
+                // 然后获取到堆中最后一个元素
                 RunnableScheduledFuture<?> replacement = queue[s];
+                // 将最后一个位置置为null
                 queue[s] = null;
+                // 如果删除的元素不是最后一个元素的话，需要对堆进行重新整理
                 if (s != i) {
+                    // 从i的位置将最后一个元素往下沉
                     siftDown(i, replacement);
+                    // 如果此时最后一个元素仍然在i的位置的话，说明下沉失败，那么尝试往上浮
                     if (queue[i] == replacement)
                         siftUp(i, replacement);
                 }
+                // 返回true，代表删除成功
                 return true;
             } finally {
                 lock.unlock();
@@ -1088,7 +1131,8 @@ public class ScheduledThreadPoolExecutor
                     siftUp(i, e);
                 }
                 // 完成添加操作后，判断添加的任务是否位于堆顶
-                // 如果是的话，将leader置为null，并且唤醒等待在available条件队列上的线程
+                // 如果是的话，将leader置为null，并且唤醒等待在available条件队列上的线程。
+                // 因为此时的堆顶元素已经变化了，那么就需要重新设置leader，所以唤醒等待在available队列的第一个线程
                 if (queue[0] == e) {
                     leader = null;
                     available.signal();
@@ -1119,12 +1163,19 @@ public class ScheduledThreadPoolExecutor
          * @param f the task to remove and return
          */
         private RunnableScheduledFuture<?> finishPoll(RunnableScheduledFuture<?> f) {
+            // 将size-1
             int s = --size;
+            // 获取到size下标对应的元素，即堆的最后一个元素
             RunnableScheduledFuture<?> x = queue[s];
+            // 将最后一个下标的位置置为null
             queue[s] = null;
+            // 如果size不等于0的话，进行堆的整理。
+            // 如果size等于0的话，说明我们要poll的就是x节点，此时堆里已经没有其他元素了，所以不用整理
             if (s != 0)
                 siftDown(0, x);
+            // 将f的heapIndex设置为-1，表示已经不在堆中了
             setIndex(f, -1);
+            // 返回堆顶元素
             return f;
         }
 
@@ -1144,32 +1195,50 @@ public class ScheduledThreadPoolExecutor
 
         public RunnableScheduledFuture<?> take() throws InterruptedException {
             final ReentrantLock lock = this.lock;
+            // 加可以被中断的锁
             lock.lockInterruptibly();
             try {
                 for (;;) {
+                    // 获取堆顶的元素
                     RunnableScheduledFuture<?> first = queue[0];
+                    // 如果堆顶还没有元素的话，将线程等待再available这个条件队列里面
                     if (first == null)
                         available.await();
                     else {
+                        // 如果堆顶存在元素，获取堆顶元素的当前要延迟的时间
                         long delay = first.getDelay(NANOSECONDS);
+                        // 如果发现delay已经大于等于0了，说明已经到期了，可以被获取并执行
                         if (delay <= 0)
+                            // 调用finishPoll之后返回
                             return finishPoll(first);
+                        // 当发现delay是大于0的情况，说明栈顶元素还没有到期，没办法获取并执行
+                        // 此时将first引用指向null，使得在等待的过程中不要持有引用
                         first = null; // don't retain ref while waiting
+                        // 如果leader不为null的话，说明已经有线程在等待栈顶元素了，那么将自身线程
+                        // 无限等待在available条件队列中
                         if (leader != null)
                             available.await();
                         else {
+                            // 如果leader为null的话
+                            // 获取当前线程
                             Thread thisThread = Thread.currentThread();
+                            // 将leader设置为当前线程
                             leader = thisThread;
                             try {
+                                // 并且将当前线程等待在available条件队列中，但是是有超时时间的等待，
+                                // 超时时间就等于堆顶元素还要延迟的时间
                                 available.awaitNanos(delay);
                             } finally {
+                                // 如果线程唤醒之后发现leader仍然是自己的话，将leader置为null
                                 if (leader == thisThread)
                                     leader = null;
                             }
                         }
+                        // 线程被唤醒之后尝试重新获取堆顶的任务
                     }
                 }
             } finally {
+                // 如果退出该方法的时候发现leader为null 并且 堆顶元素不为null，那么唤醒一个等待在available队列的线程
                 if (leader == null && queue[0] != null)
                     available.signal();
                 lock.unlock();
