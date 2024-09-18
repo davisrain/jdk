@@ -40,6 +40,7 @@ class EPollSelectorImpl
 {
 
     // File descriptors used for interrupt
+    // 用于中断的文件描述符
     protected int fd0;
     protected int fd1;
 
@@ -62,11 +63,17 @@ class EPollSelectorImpl
      */
     EPollSelectorImpl(SelectorProvider sp) throws IOException {
         super(sp);
+        // 返回pipe的两个文件描述符，合并为了一个long
         long pipeFds = IOUtil.makePipe(false);
+        // 获取高32位，pipe的read文件描述符
         fd0 = (int) (pipeFds >>> 32);
+        // 获取低32位，pipe的write文件描述符
         fd1 = (int) pipeFds;
+        // 创建一个进行实际poll操作的对象
         pollWrapper = new EPollArrayWrapper();
+        // 初始化pollWrapper的中断描述符
         pollWrapper.initInterrupt(fd0, fd1);
+        // 初始化文件描述符到selectionKey的映射map
         fdToKey = new HashMap<>();
     }
 

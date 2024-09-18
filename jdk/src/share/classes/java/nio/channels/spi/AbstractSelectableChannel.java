@@ -52,6 +52,7 @@ public abstract class AbstractSelectableChannel
 {
 
     // The provider that created this channel
+    // 创建这个channel的SelectorProvider
     private final SelectorProvider provider;
 
     // Keys that have been created by registering this channel with selectors.
@@ -62,12 +63,14 @@ public abstract class AbstractSelectableChannel
     private int keyCount = 0;
 
     // Lock for key set and count
+    // 用于keys和keyCount这两个属性的锁
     private final Object keyLock = new Object();
 
     // Lock for registration and configureBlocking operations
     private final Object regLock = new Object();
 
     // Blocking mode, protected by regLock
+    // 阻塞模式，被regLock保护
     boolean blocking = true;
 
     /**
@@ -95,15 +98,20 @@ public abstract class AbstractSelectableChannel
     private void addKey(SelectionKey k) {
         assert Thread.holdsLock(keyLock);
         int i = 0;
+        // 如果keyCount小于了数组的长度
         if ((keys != null) && (keyCount < keys.length)) {
             // Find empty element of key array
+            // 找到数组里面为null的下标
             for (i = 0; i < keys.length; i++)
                 if (keys[i] == null)
                     break;
-        } else if (keys == null) {
+        }
+        // 如果数组为null，初始化数组，长度为3
+        else if (keys == null) {
             keys =  new SelectionKey[3];
         } else {
             // Grow key array
+            // 其他情况，扩容数组
             int n = keys.length * 2;
             SelectionKey[] ks =  new SelectionKey[n];
             for (i = 0; i < keys.length; i++)
@@ -111,7 +119,9 @@ public abstract class AbstractSelectableChannel
             keys = ks;
             i = keyCount;
         }
+        // 设置数组下标i为传入的SelectionKey
         keys[i] = k;
+        // 将keyCount + 1
         keyCount++;
     }
 
@@ -193,17 +203,26 @@ public abstract class AbstractSelectableChannel
         throws ClosedChannelException
     {
         synchronized (regLock) {
+            // 如果channel不是open的，抛出异常
             if (!isOpen())
                 throw new ClosedChannelException();
+            // 如果感兴趣的operation是非法的，抛出异常
             if ((ops & ~validOps()) != 0)
                 throw new IllegalArgumentException();
+            // 如果channel是阻塞的，抛出异常
             if (blocking)
                 throw new IllegalBlockingModeException();
+            // 查找当前持有的key里面是否存在对应selector的key
             SelectionKey k = findKey(sel);
+            // 如果存在key
             if (k != null) {
+                // 设置key的interestOps为传入的ops
                 k.interestOps(ops);
+                // 更新SelectionKey里面的attachment对象为传入的att对象
                 k.attach(att);
             }
+            // 如果key不存在，说明是第一次注册，调用selector的register方法，将channel注册进去
+            // 然后将返回的selectionKey添加到key数组中
             if (k == null) {
                 // New registration
                 synchronized (keyLock) {

@@ -79,6 +79,7 @@ public class SelectionKeyImpl
     }
 
     public SelectionKey interestOps(int ops) {
+        // 确保selectionkey当前的状态是合法的
         ensureValid();
         return nioInterestOps(ops);
     }
@@ -100,9 +101,13 @@ public class SelectionKeyImpl
     }
 
     public SelectionKey nioInterestOps(int ops) {
+        // 检查ops对于自身持有的channel来说是否是合法的，如果不合法，抛出异常。
+        // 比如ServerSocketChannel只有accept是合法的
         if ((ops & ~channel().validOps()) != 0)
             throw new IllegalArgumentException();
+        // 设置持有的channel的interestOps
         channel.translateAndSetInterestOps(ops, this);
+        // 赋值给自身的interestOps持有
         interestOps = ops;
         return this;
     }

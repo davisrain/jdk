@@ -89,6 +89,7 @@ public abstract class AbstractInterruptibleChannel
 {
 
     private final Object closeLock = new Object();
+    // channel的open状态，默认是true
     private volatile boolean open = true;
 
     /**

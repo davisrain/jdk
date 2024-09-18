@@ -127,10 +127,13 @@ class EPollArrayWrapper {
 
     EPollArrayWrapper() throws IOException {
         // creates the epoll file descriptor
+        // 创建epoll的文件描述符
         epfd = epollCreate();
 
         // the epoll_event array passed to epoll_wait
+        // 计算epoll需要的数组长度
         int allocationSize = NUM_EPOLLEVENTS * SIZE_EPOLLEVENT;
+        // 通过unsafe分配一个本地对象作为pollArray
         pollArray = new AllocatedNativeObject(allocationSize, true);
         pollArrayAddress = pollArray.address();
 

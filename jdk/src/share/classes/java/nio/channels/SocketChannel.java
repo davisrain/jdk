@@ -142,6 +142,7 @@ public abstract class SocketChannel
      *          If an I/O error occurs
      */
     public static SocketChannel open() throws IOException {
+        //
         return SelectorProvider.provider().openSocketChannel();
     }
 

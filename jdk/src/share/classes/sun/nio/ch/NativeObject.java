@@ -75,9 +75,13 @@ class NativeObject {                                    // package-private
             this.allocationAddress = unsafe.allocateMemory(size);
             this.address = this.allocationAddress;
         } else {
+            // 计算出系统的页大小
             int ps = pageSize();
+            // 分配size + 一个页大小的内存，返回的是内存块的起始地址
             long a = unsafe.allocateMemory(size + ps);
+            // 将内存起始地址赋值给allocationAddress
             this.allocationAddress = a;
+            // 设置address为对齐后的内存地址
             this.address = a + ps - (a & (ps - 1));
         }
     }

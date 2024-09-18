@@ -119,6 +119,7 @@ public abstract class ServerSocketChannel
      * @return  The valid-operation set
      */
     public final int validOps() {
+        // ServerSocketChannel合法的operations只有ACCEPT
         return SelectionKey.OP_ACCEPT;
     }
 

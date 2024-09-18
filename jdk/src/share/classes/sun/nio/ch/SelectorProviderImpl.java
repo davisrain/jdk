@@ -53,10 +53,12 @@ public abstract class SelectorProviderImpl
     public abstract AbstractSelector openSelector() throws IOException;
 
     public ServerSocketChannel openServerSocketChannel() throws IOException {
+        // 创建一个ServerSocketChannelImpl返回
         return new ServerSocketChannelImpl(this);
     }
 
     public SocketChannel openSocketChannel() throws IOException {
+        // 创建一个SocketChannelImpl返回
         return new SocketChannelImpl(this);
     }
 }

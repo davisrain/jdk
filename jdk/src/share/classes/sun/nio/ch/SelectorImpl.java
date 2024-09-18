@@ -51,13 +51,17 @@ public abstract class SelectorImpl
     private Set<SelectionKey> publicSelectedKeys;     // Removal allowed, but not addition
 
     protected SelectorImpl(SelectorProvider sp) {
+        // 将selectorProvider给父类持有
         super(sp);
+        // 初始化keys和selectedKeys这两个集合
         keys = new HashSet<SelectionKey>();
         selectedKeys = new HashSet<SelectionKey>();
+        // 如果bugLevel等于1.4，将public相关的集合引用直接指向keys和selectedKeys
         if (Util.atBugLevel("1.4")) {
             publicKeys = keys;
             publicSelectedKeys = selectedKeys;
         } else {
+            // 否则，使用Collections进行包装，让其变为不可变的集合
             publicKeys = Collections.unmodifiableSet(keys);
             publicSelectedKeys = Util.ungrowableSet(selectedKeys);
         }
@@ -124,13 +128,19 @@ public abstract class SelectorImpl
                                           int ops,
                                           Object attachment)
     {
+        // 如果传入的channel不是SelChImpl类型的，报错
         if (!(ch instanceof SelChImpl))
             throw new IllegalSelectorException();
+        // 创建一个SelectionKeyImpl对象，将channel和自身这个selector都传入
         SelectionKeyImpl k = new SelectionKeyImpl((SelChImpl)ch, this);
+        // 通过cas替换selectionKey持有的attachment变量
         k.attach(attachment);
+        // 对publicKeys加锁
         synchronized (publicKeys) {
+            // 调用具体的注册逻辑
             implRegister(k);
         }
+        // 设置channel感兴趣的operation到selectionKey中
         k.interestOps(ops);
         return k;
     }

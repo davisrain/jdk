@@ -317,7 +317,9 @@ public class IOUtil {
     }
 
     public static FileDescriptor newFD(int i) {
+        // 创建一个文件描述符对象
         FileDescriptor fd = new FileDescriptor();
+        // 将文件描述符的int值设置进FileDescriptor的fd属性，然后返回FileDescriptor对象
         setfdVal(fd, i);
         return fd;
     }
@@ -329,6 +331,9 @@ public class IOUtil {
      * The read end of the pipe is returned in the high 32 bits,
      * while the write end is returned in the low 32 bits.
      */
+    // 返回两个文件描述符编码为一个long
+    // pipe的read end是高32位
+    // pipe的write end是低32位
     static native long makePipe(boolean blocking);
 
     static native boolean drain(int fd) throws IOException;

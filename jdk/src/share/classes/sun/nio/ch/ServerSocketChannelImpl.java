@@ -47,10 +47,12 @@ class ServerSocketChannelImpl
     private static NativeDispatcher nd;
 
     // Our file descriptor
+    // channel对应的文件描述符
     private final FileDescriptor fd;
 
     // fd value needed for dev/poll. This value will remain valid
     // even after the value in the file descriptor object has been set to -1
+    // 文件描述符的具体值
     private int fdVal;
 
     // ID of native thread currently blocked in this channel, for signalling
@@ -61,6 +63,7 @@ class ServerSocketChannelImpl
 
     // Lock held by any thread that modifies the state fields declared below
     // DO NOT invoke a blocking I/O operation while holding this lock!
+    // 更新state的线程需要持有这个锁
     private final Object stateLock = new Object();
 
     // -- The following fields are protected by stateLock
@@ -78,15 +81,20 @@ class ServerSocketChannelImpl
     private boolean isReuseAddress;
 
     // Our socket adaptor, if any
+    // socket适配器
     ServerSocket socket;
 
     // -- End of fields protected by stateLock
 
 
     ServerSocketChannelImpl(SelectorProvider sp) throws IOException {
+        // 将selectorProvider给父类AbstractSelectableChannel持有
         super(sp);
+        // 获取一个tcp链接相关的文件描述符对象持有
         this.fd =  Net.serverSocket(true);
+        // 获取FileDescriptor持有的实际的fd属性值
         this.fdVal = IOUtil.fdVal(fd);
+        // 将状态设置为INUSE，表示正在使用
         this.state = ST_INUSE;
     }
 
@@ -201,22 +209,31 @@ class ServerSocketChannelImpl
     @Override
     public ServerSocketChannel bind(SocketAddress local, int backlog) throws IOException {
         synchronized (lock) {
+            // 如果channel不是open的，报错
             if (!isOpen())
                 throw new ClosedChannelException();
+            // 如果channel已经绑定了一个地址了，抛出异常
             if (isBound())
                 throw new AlreadyBoundException();
+            // 如果传入的local为null，创建一个InetSocketAddress，指向本机地址，且端口为0；
+            // 否则对local地址进行检查
             InetSocketAddress isa = (local == null) ? new InetSocketAddress(0) :
                 Net.checkAddress(local);
             SecurityManager sm = System.getSecurityManager();
             if (sm != null)
                 sm.checkListen(isa.getPort());
+            // 调用tcp绑定之前的钩子函数
             NetHooks.beforeTcpBind(fd, isa.getAddress(), isa.getPort());
+            // 调用Net的bind方法将文件描述符 和 socket地址绑定起来
             Net.bind(fd, isa.getAddress(), isa.getPort());
+            // 监听文件描述符
             Net.listen(fd, backlog < 1 ? 50 : backlog);
             synchronized (stateLock) {
+                // 根据fd获取本机的socket地址给serverChannel的localAddress持有
                 localAddress = Net.localAddress(fd);
             }
         }
+        // 返回自身
         return this;
     }
 

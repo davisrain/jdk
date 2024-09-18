@@ -49,6 +49,7 @@ public class Net {
     private static final boolean exclusiveBind;
 
     static {
+        // windows返回1，linux/macos等会返回-1
         int availLevel = isExclusiveBindAvailable();
         if (availLevel >= 0) {
             String exclBindProp =
@@ -56,10 +57,12 @@ public class Net {
                     new PrivilegedAction<String>() {
                         @Override
                         public String run() {
+                            // 获取系统变量
                             return System.getProperty(
                                     "sun.net.useExclusiveBind");
                         }
                     });
+            // 根据系统变量来设置exclusiveBind属性的值
             if (exclBindProp != null) {
                 exclusiveBind = exclBindProp.length() == 0 ?
                         true : Boolean.parseBoolean(exclBindProp);
