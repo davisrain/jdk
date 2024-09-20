@@ -82,11 +82,15 @@ public abstract class SelectorImpl
     protected abstract int doSelect(long timeout) throws IOException;
 
     private int lockAndDoSelect(long timeout) throws IOException {
+        // 加锁
         synchronized (this) {
+            // 如果selector不是open的话，报错
             if (!isOpen())
                 throw new ClosedSelectorException();
+            // 对publicKeys和publicSelectedKeys加锁
             synchronized (publicKeys) {
                 synchronized (publicSelectedKeys) {
+                    // 调用doSelect方法执行具体的select逻辑
                     return doSelect(timeout);
                 }
             }
@@ -141,6 +145,8 @@ public abstract class SelectorImpl
             implRegister(k);
         }
         // 设置channel感兴趣的operation到selectionKey中
+        // 并且会将ops通过channel翻译成对应的poll事件，调用selector的putEventOps方法
+        // 将翻译后的ops存入到pollWrapper中
         k.interestOps(ops);
         return k;
     }
@@ -149,17 +155,21 @@ public abstract class SelectorImpl
 
     void processDeregisterQueue() throws IOException {
         // Precondition: Synchronized on this, keys, and selectedKeys
+        // 获取selector中已经取消的SelectionKey集合
         Set<SelectionKey> cks = cancelledKeys();
+        // 加锁遍历
         synchronized (cks) {
             if (!cks.isEmpty()) {
                 Iterator<SelectionKey> i = cks.iterator();
                 while (i.hasNext()) {
                     SelectionKeyImpl ski = (SelectionKeyImpl)i.next();
                     try {
+                        // 调用implDereg进行注销
                         implDereg(ski);
                     } catch (SocketException se) {
                         throw new IOException("Error deregistering key", se);
                     } finally {
+                        // 然后从集合中删除
                         i.remove();
                     }
                 }

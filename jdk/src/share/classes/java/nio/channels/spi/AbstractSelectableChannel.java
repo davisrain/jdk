@@ -138,11 +138,13 @@ public abstract class AbstractSelectableChannel
 
     void removeKey(SelectionKey k) {                    // package-private
         synchronized (keyLock) {
+            // 将k从keys数组里删除，并且将keyCount - 1
             for (int i = 0; i < keys.length; i++)
                 if (keys[i] == k) {
                     keys[i] = null;
                     keyCount--;
                 }
+            // 并且将SelectionKey的valid置为false
             ((AbstractSelectionKey)k).invalidate();
         }
     }

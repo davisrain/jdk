@@ -79,7 +79,7 @@ public class SelectionKeyImpl
     }
 
     public SelectionKey interestOps(int ops) {
-        // 确保selectionkey当前的状态是合法的
+        // 确保selectionKey当前的状态是合法的
         ensureValid();
         return nioInterestOps(ops);
     }

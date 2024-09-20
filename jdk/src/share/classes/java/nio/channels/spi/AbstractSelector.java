@@ -85,9 +85,11 @@ public abstract class AbstractSelector
         this.provider = provider;
     }
 
+    // 已经取消的SelectionKey集合
     private final Set<SelectionKey> cancelledKeys = new HashSet<SelectionKey>();
 
     void cancel(SelectionKey k) {                       // package-private
+        // 将SelectionKey添加到取消集合中
         synchronized (cancelledKeys) {
             cancelledKeys.add(k);
         }
@@ -195,6 +197,7 @@ public abstract class AbstractSelector
 
     /**
      * Marks the beginning of an I/O operation that might block indefinitely.
+     * 用于标记一个可能无限期阻塞的io操作的开始
      *
      * <p> This method should be invoked in tandem with the {@link #end end}
      * method, using a <tt>try</tt>&nbsp;...&nbsp;<tt>finally</tt> block as
@@ -205,17 +208,22 @@ public abstract class AbstractSelector
      * Selector#wakeup wakeup} method to be invoked if a thread's {@link
      * Thread#interrupt interrupt} method is invoked while the thread is
      * blocked in an I/O operation upon the selector.  </p>
+     *  当线程阻塞在io操作的时候，被调用了interrupt方法中断了，那么该方法会去调用selector的wakeup方法
      */
     protected final void begin() {
+        // 如果interrupter为null的话，创建一个匿名类，逻辑是调用selector的wakeup方法
         if (interruptor == null) {
             interruptor = new Interruptible() {
                     public void interrupt(Thread ignore) {
                         AbstractSelector.this.wakeup();
                     }};
         }
+        // 将interrupter通过SharedSecrets设置进当前线程的blocker属性
         AbstractInterruptibleChannel.blockedOn(interruptor);
         Thread me = Thread.currentThread();
+        // 如果线程的interrupt状态已经被设置了
         if (me.isInterrupted())
+            // 调用interrupter的interrupt方法
             interruptor.interrupt(me);
     }
 
@@ -228,6 +236,7 @@ public abstract class AbstractSelector
      * this selector.  </p>
      */
     protected final void end() {
+        // 设置当前线程的blocker属性为null
         AbstractInterruptibleChannel.blockedOn(null);
     }
 

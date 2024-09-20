@@ -230,11 +230,13 @@ class Thread implements Runnable {
      * operation, if any.  The blocker's interrupt method should be invoked
      * after setting this thread's interrupt status.
      */
+    // 当线程阻塞在一个可中断的io操作中的时候，如果线程的interrupt状态被设置了，那么该blocker的interrupt方法应该被调用
     private volatile Interruptible blocker;
     private final Object blockerLock = new Object();
 
     /* Set the blocker field; invoked via sun.misc.SharedSecrets from java.nio code
      */
+    // 设置线程的blocker字段，该方法会被nio从SharedSecrets里面调用
     void blockedOn(Interruptible b) {
         synchronized (blockerLock) {
             blocker = b;

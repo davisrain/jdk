@@ -66,14 +66,18 @@ class EPollArrayWrapper {
     private static final int EPOLL_CTL_MOD      = 3;
 
     // Miscellaneous constants
+    // 每个epoll_event的size
     private static final int SIZE_EPOLLEVENT  = sizeofEPollEvent();
     private static final int EVENT_OFFSET     = 0;
     private static final int DATA_OFFSET      = offsetofData();
     private static final int FD_OFFSET        = DATA_OFFSET;
+    // 能够打开的文件描述符的最大数量
     private static final int OPEN_MAX         = IOUtil.fdLimit();
+    // 能够监听的epoll_event的最大数量，是能够打开的fd数量和8192的更小值
     private static final int NUM_EPOLLEVENTS  = Math.min(OPEN_MAX, 8192);
 
     // Special value to indicate that an update should be ignored
+    // 一个特殊值，表示对应fd的events更新应该被忽略
     private static final byte  KILLED = (byte)-1;
 
     // Initial size of arrays for fd registration changes
@@ -84,9 +88,11 @@ class EPollArrayWrapper {
         new GetIntegerAction("sun.nio.ch.maxUpdateArraySize", Math.min(OPEN_MAX, 64*1024)));
 
     // The fd of the epoll driver
+    // epoll驱动对应的文件描述符
     private final int epfd;
 
      // The epoll_event array for results from epoll_wait
+    // 维护了所有epoll_event的数组，都是epoll_wait的结果
     private final AllocatedNativeObject pollArray;
 
     // Base address of the epoll_event array
@@ -105,6 +111,7 @@ class EPollArrayWrapper {
     int updated;
 
     // object to synchronize fd registration changes
+    // 用于对文件描述符注册的变化进行加锁
     private final Object updateLock = new Object();
 
     // number of file descriptors with registration changes pending
@@ -117,11 +124,13 @@ class EPollArrayWrapper {
     // by file descriptor and stored as bytes for efficiency reasons. For
     // file descriptors higher than MAX_UPDATE_ARRAY_SIZE (unlimited case at
     // least) then the update is stored in a map.
+    // 用于保存和索引文件描述符的events的，如果文件描述符大于了MAX_UPDATE_ARRAY_SIZE，那么会保存在一个map中
     private final byte[] eventsLow = new byte[MAX_UPDATE_ARRAY_SIZE];
     private Map<Integer,Byte> eventsHigh;
 
     // Used by release and updateRegistrations to track whether a file
     // descriptor is registered with epoll.
+    // 用于判断某个文件描述符是否已经注册到EpollArrayWrapper中了
     private final BitSet registered = new BitSet();
 
 
@@ -135,9 +144,11 @@ class EPollArrayWrapper {
         int allocationSize = NUM_EPOLLEVENTS * SIZE_EPOLLEVENT;
         // 通过unsafe分配一个本地对象作为pollArray
         pollArray = new AllocatedNativeObject(allocationSize, true);
+        // 返回pollArray数组内容开始的内存地址，由于对齐的原因，分配的实际地址可能不等于内容开始地址
         pollArrayAddress = pollArray.address();
 
         // eventHigh needed when using file descriptors > 64k
+        // 如果能够开启的fd的最大数量大于了 MAX_UPDATE_ARRAY_SIZE，初始化eventsHigh这个map用于保存大于MAX_UPDATE_ARRAY_SIZE的fd以及对应的events
         if (OPEN_MAX > MAX_UPDATE_ARRAY_SIZE)
             eventsHigh = new HashMap<>();
     }
@@ -182,13 +193,19 @@ class EPollArrayWrapper {
      * Sets the pending update events for the given file descriptor. This
      * method has no effect if the update events is already set to KILLED,
      * unless {@code force} is {@code true}.
+     * 为给出的文件描述符设置延迟更新的事件。如果这个更新的事件已经被设置为KILLED，那么这个方法不会起作用，除非force参数为true
      */
     private void setUpdateEvents(int fd, byte events, boolean force) {
+        // 如果文件描述符小于 MAX_UPDATE_ARRAY_SIZE
         if (fd < MAX_UPDATE_ARRAY_SIZE) {
+            // 判断文件描述符对应的events是否不是KILLEd 或者 force为true
             if ((eventsLow[fd] != KILLED) || force) {
+                // 将events填入eventsLow数组中，表示对应文件描述符的events
                 eventsLow[fd] = events;
             }
-        } else {
+        }
+        // 如果fd大于等于了 MAX_UPDATE_ARRAY_SIZE，使用eventsHigh来维护fd对应的events
+        else {
             Integer key = Integer.valueOf(fd);
             if (!isEventsHighKilled(key) || force) {
                 eventsHigh.put(key, Byte.valueOf(events));
@@ -211,10 +228,14 @@ class EPollArrayWrapper {
 
     /**
      * Update the events for a given file descriptor
+     * 更新一个给出的fd的events
      */
     void setInterest(int fd, int mask) {
+        // 加锁
         synchronized (updateLock) {
             // record the file descriptor and events
+            // 记录更新的fd和对应的events
+            // 判断记录的数组长度是否足够，如果不够，进行扩容
             int oldCapacity = updateDescriptors.length;
             if (updateCount == oldCapacity) {
                 int newCapacity = oldCapacity + INITIAL_PENDING_UPDATE_SIZE;
@@ -222,9 +243,11 @@ class EPollArrayWrapper {
                 System.arraycopy(updateDescriptors, 0, newDescriptors, 0, oldCapacity);
                 updateDescriptors = newDescriptors;
             }
+            // 然后将fd添加到数组的末尾，将updateCount + 1
             updateDescriptors[updateCount++] = fd;
 
             // events are stored as bytes for efficiency reasons
+            // events由于效率原因被保存为byte
             byte b = (byte)mask;
             assert (b == mask) && (b != KILLED);
             setUpdateEvents(fd, b, false);
@@ -237,8 +260,12 @@ class EPollArrayWrapper {
     void add(int fd) {
         // force the initial update events to 0 as it may be KILLED by a
         // previous registration.
+        // 加锁
         synchronized (updateLock) {
+            // 确认文件描述符是没有注册的
             assert !registered.get(fd);
+            // 调用setUpdateEvents，向pollArray中注册文件描述符
+            // 但监听的事件为0，表示没有
             setUpdateEvents(fd, (byte)0, true);
         }
     }

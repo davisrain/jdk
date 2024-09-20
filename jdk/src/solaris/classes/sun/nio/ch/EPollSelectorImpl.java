@@ -45,9 +45,11 @@ class EPollSelectorImpl
     protected int fd1;
 
     // The poll object
+    // 进行epoll操作的对象
     EPollArrayWrapper pollWrapper;
 
     // Maps from file descriptors to keys
+    // 维护了文件描述符对应selectionKey的map
     private Map<Integer,SelectionKeyImpl> fdToKey;
 
     // True if this Selector has been closed
@@ -80,8 +82,10 @@ class EPollSelectorImpl
     protected int doSelect(long timeout) throws IOException {
         if (closed)
             throw new ClosedSelectorException();
+        // 处理那些已经取消，需要被注销的selectionKey
         processDeregisterQueue();
         try {
+            // 调用begin方法，设置当前线程的blocker属性为interrupter
             begin();
             pollWrapper.poll(timeout);
         } finally {
@@ -165,25 +169,39 @@ class EPollSelectorImpl
     protected void implRegister(SelectionKeyImpl ski) {
         if (closed)
             throw new ClosedSelectorException();
+        // 获取SelectionKey持有的channel
         SelChImpl ch = ski.channel;
+        // 获取channel对应的文件描述符
         int fd = Integer.valueOf(ch.getFDVal());
+        // 将文件描述符和SelectionKey的映射关系保存进map中
         fdToKey.put(fd, ski);
+        // 然后将文件描述符添加进pollWrapper
         pollWrapper.add(fd);
+        // 将SelectionKey添加进selector的keys中，表示所有注册进该selector的SelectionKey集合
         keys.add(ski);
     }
 
     protected void implDereg(SelectionKeyImpl ski) throws IOException {
         assert (ski.getIndex() >= 0);
+        // 获取SelectionKey对应的channel的文件描述符
         SelChImpl ch = ski.channel;
         int fd = ch.getFDVal();
+        // 将其从fdToKey这个map中删除
         fdToKey.remove(Integer.valueOf(fd));
+        // 将fd从pollWrapper中删除
         pollWrapper.remove(fd);
+        // 并且设置ski的index为-1，表示不存在于pollArray中
         ski.setIndex(-1);
+        // 然后从selector的keys和selectedKeys集合中删除ski
         keys.remove(ski);
         selectedKeys.remove(ski);
+        // 调用deregister将ski从channel的keys数组里面注销
         deregister((AbstractSelectionKey)ski);
+        // 判断channel是否已经不是open且不是被注册的了
         SelectableChannel selch = ski.channel();
+        // 判断是否是被注册的方法是查看channel持有的SelectionKey数组的数量
         if (!selch.isOpen() && !selch.isRegistered())
+            // 满足条件的话直接调用channel的kill方法
             ((SelChImpl)selch).kill();
     }
 
@@ -191,6 +209,7 @@ class EPollSelectorImpl
         if (closed)
             throw new ClosedSelectorException();
         SelChImpl ch = ski.channel;
+        // 获取channel对应的fd，更新pollArray中fd感兴趣的eventOps
         pollWrapper.setInterest(ch.getFDVal(), ops);
     }
 

@@ -381,13 +381,16 @@ class ServerSocketChannelImpl
     /**
      * Translates an interest operation set into a native poll event set
      */
+    // 将感兴趣的操作翻译哼本地的poll事件
     public void translateAndSetInterestOps(int ops, SelectionKeyImpl sk) {
         int newOps = 0;
 
         // Translate ops
+        // 如果ops是ACCEPT的话，将其转换成POLLIN事件
         if ((ops & SelectionKey.OP_ACCEPT) != 0)
             newOps |= PollArrayWrapper.POLLIN;
         // Place ops into pollfd array
+        // 将事件设置到selector持有的pollArray中
         sk.selector.putEventOps(sk, newOps);
     }
 
