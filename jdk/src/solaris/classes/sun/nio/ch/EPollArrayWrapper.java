@@ -156,6 +156,7 @@ class EPollArrayWrapper {
     void initInterrupt(int fd0, int fd1) {
         outgoingInterruptFD = fd1;
         incomingInterruptFD = fd0;
+        // 将读interrupt状态的fd添加进epoll实例中，并且对EPOLLIN事件进行监听
         epollCtl(epfd, EPOLL_CTL_ADD, fd0, EPOLLIN);
     }
 
@@ -295,15 +296,26 @@ class EPollArrayWrapper {
     }
 
     int poll(long timeout) throws IOException {
+        // 更新从上一次select结束到本次select开始之间的新注册的fd，
+        // 即解析updateRegistrations数组和updateCount，更新完成后将updateCount置为0，重置数组。
+        // 调用epollCtl方法将fd和events添加进epoll实例中，进行维护
         updateRegistrations();
+        // 调用epollWait方法，监听epoll实例里面维护的fd对应的events是否触发，
+        // 如果触发，会将fd和events封装成epoll_event结构体添加到pollArrayAddress这个地址开始的字节数组中。
+        // 该方法会返回有多少个事件被监听到了且维护在pollArray中了
         updated = epollWait(pollArrayAddress, NUM_EPOLLEVENTS, timeout, epfd);
+        // 遍历pollArray数组
         for (int i=0; i<updated; i++) {
+            // 获取每个epoll_event对应的fd，如果发现它等于incomingInterruptFD的话
             if (getDescriptor(i) == incomingInterruptFD) {
+                // 将interruptedIndex设置为i，并且将interrupted标志置为true
                 interruptedIndex = i;
                 interrupted = true;
+                // 跳出循环
                 break;
             }
         }
+        // 返回监听到的epoll_event数量
         return updated;
     }
 
@@ -314,28 +326,47 @@ class EPollArrayWrapper {
         synchronized (updateLock) {
             int j = 0;
             while (j < updateCount) {
+                // 遍历存入到当前EpollArrayWrapper里面的fd
                 int fd = updateDescriptors[j];
+                // 根据eventsLow或者eventsHigh获取fd对应的events
                 short events = getUpdateEvents(fd);
+                // 根据registered这个BitSet判断当前的fd是否已经注册
                 boolean isRegistered = registered.get(fd);
                 int opcode = 0;
 
+                // 如果events不等于KILLED的话
                 if (events != KILLED) {
+                    // 如果fd已经注册了，根据events判断opCode的值。
+                    // 如果events等于0，说明该事件已经被删除了 EPOLL_CTL_DEL；
+                    // 如果events不等于0，说明该事件修改了 EPOLL_CTL_MOD
                     if (isRegistered) {
                         opcode = (events != 0) ? EPOLL_CTL_MOD : EPOLL_CTL_DEL;
                     } else {
+                        // 如果fd还没有注册，且events不等于0，opcode为EPOLL_CTL_ADD，表示新增注册
                         opcode = (events != 0) ? EPOLL_CTL_ADD : 0;
                     }
+                    // 如果opcode不等于0
                     if (opcode != 0) {
+                        // 调用epollCtl方法，将epfd、opcode、fd、events都传入
+                        // epollCtl方法是向epoll实例中添加、修改和删除对应fd感兴趣的事件，
+                        // 在注册的时候就需要告诉epoll实例该fd感兴趣的事件了
                         epollCtl(epfd, opcode, fd, events);
+                        // 如果opcode等于EPOLL_CTL_ADD
                         if (opcode == EPOLL_CTL_ADD) {
+                            // 将Bitset中fd对应的二进制设置为1，表示该fd已经注册
                             registered.set(fd);
-                        } else if (opcode == EPOLL_CTL_DEL) {
+                        }
+                        // 如果opcode等于EPOLL_CTL_DEL
+                        else if (opcode == EPOLL_CTL_DEL) {
+                            // 将BitSet中fd对应的二进制设置为0，表示取消注册
                             registered.clear(fd);
                         }
                     }
                 }
+                // 继续遍历
                 j++;
             }
+            // 然后将updateCount置为0，表示已经处理完上一次select到本次select之间的更新操作
             updateCount = 0;
         }
     }
@@ -344,6 +375,7 @@ class EPollArrayWrapper {
     private boolean interrupted = false;
 
     public void interrupt() {
+        // 向outgoingInterruptFD这个写fd写入interrupt信息
         interrupt(outgoingInterruptFD);
     }
 

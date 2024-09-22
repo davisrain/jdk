@@ -85,20 +85,29 @@ class EPollSelectorImpl
         // 处理那些已经取消，需要被注销的selectionKey
         processDeregisterQueue();
         try {
-            // 调用begin方法，设置当前线程的blocker属性为interrupter
+            // 调用begin方法，设置当前线程的blocker属性为interrupter。
+            // 在当前线程阻塞在io的时候被设置了interrupt属性，那么就会调用blocker的interrupt方法，该方法的具体逻辑就是调用当前selector的wakeup方法
+            // 通过fd1发送一个中断事件，这样epoll操作就能立即返回，并且解析中断对应的epoll_event，将pollWrapper的interrupted属性置为true。
+            // 这样就达到了对select的线程执行interrupt方法就能唤醒selector的效果
             begin();
             pollWrapper.poll(timeout);
         } finally {
             end();
         }
         processDeregisterQueue();
+        // epoll_wait结束之后，根据监听到的epoll_event数组更新selector的selectedKeys集合
         int numKeysUpdated = updateSelectedKeys();
+        // 如果pollWrapper的interrupted属性为true
         if (pollWrapper.interrupted()) {
             // Clear the wakeup pipe
+            // 将pollArray中对应interruptedIndex位置的epoll_event的events置为0
             pollWrapper.putEventOps(pollWrapper.interruptedIndex(), 0);
             synchronized (interruptLock) {
+                // 并且将pollWrapper的interrupted属性置为false
                 pollWrapper.clearInterrupted();
+                // 将管道中的数据都清空，重置中断机制管道的状态，使得中断能够重复触发
                 IOUtil.drain(fd0);
+                // 将interruptTriggered属性置为false
                 interruptTriggered = false;
             }
         }
@@ -112,25 +121,39 @@ class EPollSelectorImpl
     private int updateSelectedKeys() {
         int entries = pollWrapper.updated;
         int numKeysUpdated = 0;
+        // 遍历pollArray的epoll_event数组
         for (int i=0; i<entries; i++) {
+            // 获取每个event对应的fd
             int nextFD = pollWrapper.getDescriptor(i);
+            // 获取到fd对应的SelectionKeyImpl对象
             SelectionKeyImpl ski = fdToKey.get(Integer.valueOf(nextFD));
             // ski is null in the case of an interrupt
+            // 如果ski存在
             if (ski != null) {
+                // 获取epoll_event中的感兴趣的事件
                 int rOps = pollWrapper.getEventOps(i);
+                // 如果selectedKeys已经包含了该ski
                 if (selectedKeys.contains(ski)) {
+                    // 将epoll事件转换成nio的事件设置进ski的readyOps属性中
                     if (ski.channel.translateAndSetReadyOps(rOps, ski)) {
+                        // 将numKeysUpdated + 1
                         numKeysUpdated++;
                     }
                 } else {
+                    // 如果selectedKeys不包含该ski
+                    // 将epoll事件转换成nio事件设置进ski的readyOps属性中
                     ski.channel.translateAndSetReadyOps(rOps, ski);
+                    // 如果ski的nioReadOps 和 nioInterestOps与操作之后不为0，说明有合法的事件ready了
                     if ((ski.nioReadyOps() & ski.nioInterestOps()) != 0) {
+                        // 将ski添加到selector的selectedKeys集合中
                         selectedKeys.add(ski);
+                        // 将numKeyUpdated + 1
                         numKeysUpdated++;
                     }
                 }
             }
         }
+        // 返回numKeysUpdated
         return numKeysUpdated;
     }
 
@@ -214,9 +237,14 @@ class EPollSelectorImpl
     }
 
     public Selector wakeup() {
+        // 加锁
         synchronized (interruptLock) {
+            // 如果selector的interruptTriggered属性为false，说明还没有触发interrupt
             if (!interruptTriggered) {
+                // 调用pollWrapper的interrupt方法，也就是向fd1写入interrupt信息
+                // 那么通过fd0可以读取到
                 pollWrapper.interrupt();
+                // 并且将interruptTriggered属性置为true，表示触发了interrupt
                 interruptTriggered = true;
             }
         }

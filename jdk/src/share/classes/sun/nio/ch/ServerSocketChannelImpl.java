@@ -326,6 +326,7 @@ class ServerSocketChannelImpl
         int oldOps = sk.nioReadyOps();
         int newOps = initialOps;
 
+        // 如果poll event是POLLNVAL，返回false
         if ((ops & PollArrayWrapper.POLLNVAL) != 0) {
             // This should only happen if this channel is pre-closed while a
             // selection operation is in progress
@@ -333,18 +334,26 @@ class ServerSocketChannelImpl
             return false;
         }
 
+        // 如果poll event里面存在POLLERR 或者 POLLHUP
         if ((ops & (PollArrayWrapper.POLLERR
                     | PollArrayWrapper.POLLHUP)) != 0) {
+            // 设置sk的nioReadOps为nioInterestOps
             newOps = intOps;
             sk.nioReadyOps(newOps);
+            // 将newOps和oldOps取反进行与操作，返回结果是否等于0
+            // 表示更新是否成功
             return (newOps & ~oldOps) != 0;
         }
 
+        // 如果poll event里面存在POLLIN 并且 sk中感兴趣的nio事件有ACCEPT
         if (((ops & PollArrayWrapper.POLLIN) != 0) &&
             ((intOps & SelectionKey.OP_ACCEPT) != 0))
+            // 将newOps中添加nio的ACCEPT事件
                 newOps |= SelectionKey.OP_ACCEPT;
 
+        // 设置sk的nioReadyOps
         sk.nioReadyOps(newOps);
+        // 将新的ops和原本的ops取反进行比较，如果不等于0，说明更新成功，返回true
         return (newOps & ~oldOps) != 0;
     }
 
@@ -353,6 +362,7 @@ class ServerSocketChannelImpl
     }
 
     public boolean translateAndSetReadyOps(int ops, SelectionKeyImpl sk) {
+        // 翻译epoll事件为nio事件，设置到sk的readyOps属性中，并且初始的newOps设置为0
         return translateReadyOps(ops, 0, sk);
     }
 
@@ -386,7 +396,7 @@ class ServerSocketChannelImpl
         int newOps = 0;
 
         // Translate ops
-        // 如果ops是ACCEPT的话，将其转换成POLLIN事件
+        // 如果ops是ACCEPT的话，将其转换成epoll的POLLIN事件
         if ((ops & SelectionKey.OP_ACCEPT) != 0)
             newOps |= PollArrayWrapper.POLLIN;
         // Place ops into pollfd array
