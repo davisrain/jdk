@@ -69,7 +69,9 @@ public abstract class AbstractSelectionKey
         // condition between selector's select() and channel's close().
         synchronized (this) {
             if (valid) {
+                // 将valid属性设置为false
                 valid = false;
+                // 调用持有的selector的cancel方法，并且将自身传入
                 ((AbstractSelector)selector()).cancel(this);
             }
         }

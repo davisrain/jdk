@@ -105,7 +105,7 @@ public class SelectionKeyImpl
         // 比如ServerSocketChannel只有accept是合法的
         if ((ops & ~channel().validOps()) != 0)
             throw new IllegalArgumentException();
-        // 设置持有的channel的interestOps
+        // 将nio事件转换成channel对应的poll事件，设置进selector中
         channel.translateAndSetInterestOps(ops, this);
         // 赋值给自身的interestOps持有
         interestOps = ops;

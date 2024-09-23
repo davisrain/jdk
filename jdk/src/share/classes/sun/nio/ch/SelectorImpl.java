@@ -145,7 +145,7 @@ public abstract class SelectorImpl
             implRegister(k);
         }
         // 设置channel感兴趣的operation到selectionKey中
-        // 并且会将ops通过channel翻译成对应的poll事件，调用selector的putEventOps方法
+        // 并且会将nio事件通过channel翻译成对应的poll事件，调用selector的putEventOps方法
         // 将翻译后的ops存入到pollWrapper中
         k.interestOps(ops);
         return k;

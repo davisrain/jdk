@@ -254,7 +254,9 @@ public abstract class AbstractSelectableChannel
     protected final void implCloseChannel() throws IOException {
         implCloseSelectableChannel();
         synchronized (keyLock) {
+            // 遍历持有的keys集合
             int count = (keys == null) ? 0 : keys.length;
+            // 将channel持有的keys依次调用cancel方法进行取消
             for (int i = 0; i < count; i++) {
                 SelectionKey k = keys[i];
                 if (k != null)

@@ -277,11 +277,15 @@ class EPollArrayWrapper {
     void remove(int fd) {
         synchronized (updateLock) {
             // kill pending and future update for this file descriptor
+            // 将eventsLow或者eventsHigh里面fd对应的事件设置为KILLED
             setUpdateEvents(fd, KILLED, false);
 
             // remove from epoll
+            // 如果fd已经注册进epoll实例了
             if (registered.get(fd)) {
+                // 调用epollCtl方法，将fd从epoll实例中删除
                 epollCtl(epfd, EPOLL_CTL_DEL, fd, 0);
+                // 并且将registered这个BitSet里面fd对应的二进制置为0
                 registered.clear(fd);
             }
         }

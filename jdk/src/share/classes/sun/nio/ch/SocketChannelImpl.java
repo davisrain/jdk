@@ -957,12 +957,17 @@ class SocketChannelImpl
      */
     public void translateAndSetInterestOps(int ops, SelectionKeyImpl sk) {
         int newOps = 0;
+        // 如果nio事件是read，翻译成POLLIN
         if ((ops & SelectionKey.OP_READ) != 0)
             newOps |= PollArrayWrapper.POLLIN;
+        // 如果nio事件是write，翻译成POLLOUT
         if ((ops & SelectionKey.OP_WRITE) != 0)
             newOps |= PollArrayWrapper.POLLOUT;
+        // 如果nio事件是connect，翻译成POLLCONN
+        // POLLCONN和POLLOUT的值是一样的
         if ((ops & SelectionKey.OP_CONNECT) != 0)
             newOps |= PollArrayWrapper.POLLCONN;
+        // 设置进selector中
         sk.selector.putEventOps(sk, newOps);
     }
 
